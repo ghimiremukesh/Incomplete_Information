@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+#training logs
+experiment_scripts/
+logs/
+
 # C extensions
 *.so
 
