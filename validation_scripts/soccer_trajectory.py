@@ -19,8 +19,6 @@ def value_action(X_nn, t_nn, model, theta):
     v2 = X_nn[3]
     p = X_nn[4]
 
-
-
     X = np.vstack((d1, v1, d2, v2, p))
     X = torch.tensor(X, dtype=torch.float32, requires_grad=True).T
     t = torch.tensor(t_nn, dtype=torch.float32, requires_grad=True)
@@ -52,22 +50,16 @@ def value_action(X_nn, t_nn, model, theta):
 
     for i in range(len(u_c)):
         for j in range(len(d_c)):
-            H[i, j] = -lam_1.squeeze() * v1.squeeze() - lam_2.squeeze() * u_c[i].squeeze() - \
-                         lam_4.squeeze() * v2.squeeze() - lam_5.squeeze() * d_c[j].squeeze() - \
-                         lam_6.squeeze() * torch.sign(u_c[i].squeeze()) + theta * u_c[i]
+            H[i, j] = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u_c[i].squeeze() + \
+                         lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d_c[j].squeeze() + \
+                         lam_6.squeeze() * torch.sign(u_c[i].squeeze()) - theta * u_c[i]
 
-    # H = H.flatten()
-    # H = H.reshape(len(H)//4, 4)
-    # H = -1 * H
-    d_index = torch.argmax(H[:, :], dim=1)[1]
-    u_index = torch.argmin(H[:, d_index])
-    # u_index = torch.argmin(H[:, :], dim=1)[0]
-    # d_index = torch.argmax(H[u_index, :])
+    u_index = torch.argmin(H[:, :], dim=1)[0] # maximin
+    d_index = torch.argmax(H[u_index, :])
     u = u_c[u_index]
     d = d_c[d_index]
 
     return u, d, y
-
 
 
 def dynamic(X_nn, dt, action):
@@ -86,8 +78,6 @@ if __name__ == '__main__':
     ckpt_path = '../experiment_scripts/logs/soccer_hji/checkpoints/model_final.pth'
     # ckpt_path = '../logs/soccer_hji_fix/checkpoints/model_final.pth'
     activation = 'tanh'
-
-    theta = torch.Tensor([[1]]) # type L or R
 
     # Initialize and load the model
     model = modules.SingleBVPNet(in_features=7, out_features=1, type=activation, mode='mlp',
@@ -108,8 +98,9 @@ if __name__ == '__main__':
     x0[:, 1] = 0
     x0[:, 3] = 0
 
+    theta = torch.Tensor([[1]])  # type L or R
     p = torch.zeros(1, 1).uniform_(0, 1)
-    p = torch.Tensor([[1]]) # force type
+    p = torch.Tensor([[1]]) # force prior for debugging
     X0 = torch.cat((x0, p), dim=1)
     X0 = torch.cat((X0, theta), dim=1)
 
@@ -117,8 +108,6 @@ if __name__ == '__main__':
     Time = np.linspace(0, 1, num=N)
     dt = Time[1] - Time[0]
     Time = np.flip(Time)
-
-
 
     d1 = np.zeros((N,))
     v1 = np.zeros((N,))
@@ -128,9 +117,6 @@ if __name__ == '__main__':
     u2 = np.zeros((N,))
     p = np.zeros((N,))
     V = np.zeros((N,))
-
-
-
 
     d1[0] = X0[:, 0]
     v1[0] = X0[:, 1]
@@ -177,9 +163,7 @@ if __name__ == '__main__':
     ax3.set_ylabel('Value')
     ax3.set_xlabel('TIme')
 
-
-
-    val = -(d1 - d2) - (theta.detach().cpu().numpy() * u1).reshape(-1,)
+    val = -(d1 - d2) - (theta.detach().cpu().numpy() * u1).reshape(-1,) # plot value
     print(val)
     ax3.plot(Time, val, label="true value")
     ax3.legend()

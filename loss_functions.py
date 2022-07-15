@@ -31,9 +31,6 @@ def initialize_soccer_hji(dataset):
         lam_5 = dvdx[:, 3:4]
         lam_6 = dvdx[:, 4:5]
 
-
-
-
         # H = lambda^T * (-f) + L because we invert the time
         # u = dataset.uMax * -1* torch.sign(-lam_2)  # backward time and -H
         # d = dataset.dMax * torch.sign(-lam_5)
@@ -45,25 +42,20 @@ def initialize_soccer_hji(dataset):
         d_c = torch.tensor([-dataset.dMax, dataset.dMax])
         H = torch.zeros(dataset.numpoints, 2, 2)
 
-
         for i in range(len(u_c)):
             for j in range(len(d_c)):
               H[:, i, j] = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u_c[i].squeeze()+ \
                 lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d_c[j].squeeze() + \
                            lam_6.squeeze() * torch.sign(u_c[i].squeeze()) - theta * u_c[i]
 
-        # H = H.flatten()
-        # H = H.reshape(len(H)//4, 4)
-        # H = -1 * H
-
         u = torch.zeros(dataset.numpoints)
         d = torch.zeros(dataset.numpoints)
         for i in range(dataset.numpoints):
-            # d_index = torch.argmax(H[i, :, :], dim=1)[1]
+            # d_index = torch.argmax(H[i, :, :], dim=1)[1] # minimax
             # u_index = torch.argmin(H[i, :, d_index])
             # u[i] = u_c[u_index]
             # d[i] = d_c[d_index]
-            u_index = torch.argmin(H[i, :, :], dim=1)[0]
+            u_index = torch.argmin(H[i, :, :], dim=1)[0] # maximin
             d_index = torch.argmax(H[i, u_index, :])
             u[i] = u_c[u_index]
             d[i] = d_c[d_index]
