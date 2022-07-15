@@ -4,8 +4,9 @@ __pycache__/
 *$py.class
 
 #training logs
-experiment_scripts/
+experiment_scripts/logs/
 logs/
+.DS_Store
 
 # C extensions
 *.so
