@@ -1,9 +1,7 @@
 import torch
 import diff_operators
-import os
 
-
-device  = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 def initialize_soccer_hji(dataset):
     def soccer_hji(model_output, gt):
@@ -18,44 +16,40 @@ def initialize_soccer_hji(dataset):
         jac, _ = diff_operators.jacobian(y, x)
         theta = x[:, :, -1]
 
-
         # partial gradient of V w.r.t. time and state
         dvdt = jac[..., 0, 0].squeeze()
         dvdx = jac[..., 0, 1:].squeeze()
 
-
-        # unnormalize the costate for agent 1
+        # co-states
         lam_1 = dvdx[:, :1]
         lam_2 = dvdx[:, 1:2]
         lam_4 = dvdx[:, 2:3]
         lam_5 = dvdx[:, 3:4]
         lam_6 = dvdx[:, 4:5]
 
-        # H = lambda^T * (-f) + L because we invert the time
-        # u = dataset.uMax * -1* torch.sign(-lam_2)  # backward time and -H
-        # d = dataset.dMax * torch.sign(-lam_5)
-
         v1 = x[:, :, 2]
         v2 = x[:, :, 4]
 
+        # action candidates
         u_c = torch.tensor([-dataset.uMax, dataset.uMax])
         d_c = torch.tensor([-dataset.dMax, dataset.dMax])
         H = torch.zeros(dataset.numpoints, 2, 2)
 
         for i in range(len(u_c)):
             for j in range(len(d_c)):
-              H[:, i, j] = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u_c[i].squeeze()+ \
-                lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d_c[j].squeeze() + \
-                           lam_6.squeeze() * torch.sign(u_c[i].squeeze()) - theta * u_c[i]
+                H[:, i, j] = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u_c[i].squeeze() + \
+                             lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d_c[j].squeeze() + \
+                             lam_6.squeeze() * torch.sign(u_c[i].squeeze()) - theta * u_c[i]
 
         u = torch.zeros(dataset.numpoints)
         d = torch.zeros(dataset.numpoints)
+        # pick action based on max_d min_u H
         for i in range(dataset.numpoints):
             # d_index = torch.argmax(H[i, :, :], dim=1)[1] # minimax
             # u_index = torch.argmin(H[i, :, d_index])
             # u[i] = u_c[u_index]
             # d[i] = d_c[d_index]
-            u_index = torch.argmin(H[i, :, :], dim=1)[0] # maximin
+            u_index = torch.argmin(H[i, :, :], dim=1)[0]  # maximin
             d_index = torch.argmax(H[i, u_index, :])
             u[i] = u_c[u_index]
             d[i] = d_c[d_index]
@@ -63,14 +57,10 @@ def initialize_soccer_hji(dataset):
         u = u.to(device)
         d = d.to(device)
 
-
-
-        # calculate hamiltonian, H = lambda^T * (-f) + L because we invert the time
-        ham = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u.squeeze()+ \
-                lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d.squeeze() + \
+        # calculate hamiltonian
+        ham = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u.squeeze() + \
+              lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d.squeeze() + \
               lam_6.squeeze() * torch.sign(u.squeeze()) - theta * u.squeeze()
-
-
 
         # complete information
         # ham = -lam_1.squeeze() * v1.squeeze() - lam_2.squeeze() * u.squeeze() - \
@@ -80,7 +70,7 @@ def initialize_soccer_hji(dataset):
         if torch.all(dirichlet_mask):
             diff_constraint_hom = torch.Tensor([0])
         else:
-            # try HJI with instataneous loss of 1
+            # hji equation
             diff_constraint_hom = -dvdt + ham
             # diff_constraint_hom = torch.max(diff_constraint_hom, (y-source_boundary_values).squeeze())
             # diff_constraint_hom = dvdt + torch.minimum(torch.tensor([[0]]), ham)
@@ -89,10 +79,8 @@ def initialize_soccer_hji(dataset):
         # boundary condition check
         dirichlet = y[dirichlet_mask] - source_boundary_values[dirichlet_mask]
 
-
         # A factor of (2e5, 100) to make loss roughly equal
         return {'dirichlet': torch.abs(dirichlet).sum(),  # 1e4
                 'diff_constraint_hom': torch.abs(diff_constraint_hom).sum() / 40}
 
     return soccer_hji
-
