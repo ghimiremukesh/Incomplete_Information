@@ -1,4 +1,4 @@
-# Imperfect Information Game 
+# Incomplete Information Game 
 
 ## A Simple Soccer Game 
 
