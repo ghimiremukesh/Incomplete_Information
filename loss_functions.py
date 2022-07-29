@@ -3,11 +3,76 @@ import diff_operators
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
+
+def initialize_soccer_incomplete(dataset):
+    def soccer_incomplete(model_output, gt):
+
+        source_boundary_values = gt['source_boundary_values']
+        x = model_output['model_in']
+        # output of the value network V(t, x, p)
+        y = model_output['model_out']  # (meta_batch_size, num_points, 1)
+        dirichlet_mask = gt['dirichlet_mask']
+
+        # calculate the partial gradient w.r.t. state (not p)
+        jac, _ = diff_operators.jacobian(y, x)
+        dvdx = jac[..., 0, 1:-1].squeeze() # exclude the last one
+        dvdt = jac[..., 0, 0].squeeze()
+
+        # co-states for hamiltonian H = argmax_u argmin_d = <\lambda, f>
+        lam_da = dvdx[:, :1].squeeze()
+        lam_va = dvdx[:, 1:2].squeeze()
+        lam_dd = dvdx[:, 2:3].squeeze()
+        lam_dv = dvdx[:, 3:].squeeze()
+
+        v1 = x[:, :, 2]
+        v2 = x[:, :, 4]
+
+        # action candidates
+        u_c = torch.tensor([-dataset.uMax, dataset.uMax])
+        d_c = torch.tensor([-dataset.dMax, dataset.dMax])
+        H = torch.zeros(dataset.numpoints, 2, 2)
+
+        for i in range(len(u_c)):
+            for j in range(len(d_c)):
+                H[:, i, j] = lam_da * v1 + lam_va * u_c[i] + lam_dd * v2 + lam_dv * d_c[j]
+
+        u = torch.zeros(dataset.numpoints)
+        d = torch.zeros(dataset.numpoints)
+        # pick action based on max_u min_d H
+        for i in range(dataset.numpoints):
+            d_index = torch.argmax(H[i, :, :], dim=1)[1]
+            u_index = torch.argmin(H[i, :, d_index])
+            u[i] = u_c[u_index]
+            d[i] = d_c[d_index]
+
+        u = u.to(device)
+        d = d.to(device)
+
+        ham = lam_da * v1 + lam_va * u + lam_dd * v2 + lam_dv * d
+
+        if torch.all(dirichlet_mask):
+            diff_constraint_hom = torch.Tensor([0])
+        else:
+            # hji equation -dv/dt because the time is backward during training
+            diff_constraint_hom = -dvdt + ham
+
+        # boundary condition check
+        dirichlet = y[dirichlet_mask] - source_boundary_values[dirichlet_mask]
+
+        # A factor of (2e5, 100) to make loss roughly equal
+        return {'dirichlet': torch.abs(dirichlet).sum(),  # 1e4
+                'diff_constraint_hom': torch.abs(diff_constraint_hom).sum() / 40}
+
+    return soccer_incomplete
+
+
 def initialize_soccer_hji(dataset):
     def soccer_hji(model_output, gt):
 
         source_boundary_values = gt['source_boundary_values']
         x = model_output['model_in']
+
+        # the network output should be V1 and V2
         y = model_output['model_out']  # (meta_batch_size, num_points, 1); value
         dirichlet_mask = gt['dirichlet_mask']
         batch_size = x.shape[1]
@@ -33,13 +98,22 @@ def initialize_soccer_hji(dataset):
         # action candidates
         u_c = torch.tensor([-dataset.uMax, dataset.uMax])
         d_c = torch.tensor([-dataset.dMax, dataset.dMax])
-        H = torch.zeros(dataset.numpoints, 2, 2)
+        H1 = torch.zeros(dataset.numpoints, 2, 1)
+        H2 = torch.zeros(dataset.numpoints, 2, 1)
 
+        # for i in range(len(u_c)):
+        #     for j in range(len(d_c)):
+        #         H[:, i, j] = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u_c[i].squeeze() + \
+        #                      lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d_c[j].squeeze() + \
+        #                      lam_6.squeeze() * torch.sign(u_c[i].squeeze()) - theta * u_c[i]
+
+        # General-Sum
         for i in range(len(u_c)):
-            for j in range(len(d_c)):
-                H[:, i, j] = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u_c[i].squeeze() + \
-                             lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d_c[j].squeeze() + \
-                             lam_6.squeeze() * torch.sign(u_c[i].squeeze()) - theta * u_c[i]
+            H1[:, i] = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u_c[i].squeeze() + \
+                       lam_6.squeeze() * u_c[i]
+
+        for i in range(len(d_c)):
+            H2[:, i] = lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d_c[i].squeeze()
 
         u = torch.zeros(dataset.numpoints)
         d = torch.zeros(dataset.numpoints)
@@ -49,8 +123,8 @@ def initialize_soccer_hji(dataset):
             # u_index = torch.argmin(H[i, :, d_index])
             # u[i] = u_c[u_index]
             # d[i] = d_c[d_index]
-            u_index = torch.argmin(H[i, :, :], dim=1)[0]  # maximin
-            d_index = torch.argmax(H[i, u_index, :])
+            u_index = torch.argmax(H1[i, :, :], dim=1)  # maximin
+            d_index = torch.argmin(H2[i, :, :], dim=1)
             u[i] = u_c[u_index]
             d[i] = d_c[d_index]
 
@@ -58,10 +132,16 @@ def initialize_soccer_hji(dataset):
         d = d.to(device)
 
         # calculate hamiltonian
-        ham = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u.squeeze() + \
-              lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d.squeeze() + \
-              lam_6.squeeze() * torch.sign(u.squeeze()) - theta * u.squeeze()
+        # ham = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u.squeeze() + \
+        #       lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d.squeeze() + \
+        #       lam_6.squeeze() * torch.sign(u.squeeze()) - theta * u.squeeze()
 
+        # general-sum
+        ham_1 = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u.squeeze() + lam_6.squeeze() * u
+
+        ham_2 = lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d.squeeze()
+
+        ham = ham_1 + ham_2
         # complete information
         # ham = -lam_1.squeeze() * v1.squeeze() - lam_2.squeeze() * u.squeeze() - \
         #       lam_4.squeeze() * v2.squeeze() - lam_5.squeeze() * d.squeeze()
@@ -70,7 +150,7 @@ def initialize_soccer_hji(dataset):
         if torch.all(dirichlet_mask):
             diff_constraint_hom = torch.Tensor([0])
         else:
-            # hji equation
+            # hji equation -dv/dt because the time is backward during training
             diff_constraint_hom = -dvdt + ham
             # diff_constraint_hom = torch.max(diff_constraint_hom, (y-source_boundary_values).squeeze())
             # diff_constraint_hom = dvdt + torch.minimum(torch.tensor([[0]]), ham)
