@@ -127,6 +127,7 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
                             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad)
 
                     optim.step()
+                    model.convexify()
 
                 pbar.update(1)
 

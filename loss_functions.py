@@ -61,7 +61,7 @@ def initialize_soccer_incomplete(dataset):
 
         # A factor of (2e5, 100) to make loss roughly equal
         return {'dirichlet': torch.abs(dirichlet).sum(),  # 1e4
-                'diff_constraint_hom': torch.abs(diff_constraint_hom).sum() / 40}
+                'diff_constraint_hom': torch.abs(diff_constraint_hom).sum() / 6}
 
     return soccer_incomplete
 
