@@ -21,19 +21,6 @@ class BatchLinear(nn.Linear):
         output += bias.unsqueeze(-2)
         return output
 
-class BatchLinear1(nn.Linear):
-    '''A linear layer'''
-    __doc__ = nn.Linear.__doc__
-
-    def forward(self, input, params=None):
-        if params is None:
-            params = OrderedDict(self.named_parameters())
-
-        weight = params['weight']
-
-        output = input.matmul(weight.permute(*[i for i in range(len(weight.shape) - 2)], -1, -2))
-        return output
-
 class Sine(nn.Module):
     def __init(self):
         super().__init__()
@@ -47,7 +34,7 @@ class FCBlock(nn.Module):
     '''
 
     def __init__(self, in_features, out_features, num_hidden_layers, hidden_features,
-                 outermost_linear=False, nonlinearity='relu', weight_init=None, dropout=0.03):
+                 outermost_linear=False, nonlinearity='relu', weight_init=None):
         super().__init__()
 
         self.first_layer_init = None
@@ -71,43 +58,37 @@ class FCBlock(nn.Module):
             self.weight_init = nl_weight_init
 
         # non-convex layer
-        u_sizes = [in_features - 1] * 1 + [hidden_features] * num_hidden_layers
+        u_sizes = [in_features - 1] * 1 + [hidden_features] * (num_hidden_layers-1)
         self.net_u = nn.ModuleList([nn.Sequential(
-            nn.Linear(in_features, hidden_features, bias=True), nl,
-            nn.Dropout(dropout))
+            nn.Linear(in_features, hidden_features, bias=True), nl)
             for in_features in u_sizes])
         
-        z_z_sizes = [hidden_features] * num_hidden_layers
+        z_z_sizes = [hidden_features] * (num_hidden_layers-1) + [1]
         self.net_z_z = nn.ModuleList([nn.Sequential(
-            nn.Linear(in_features, hidden_features, bias=False),
-            nn.Dropout(dropout))
-            for in_features in z_z_sizes])
+            nn.Linear(hidden_features, out_features, bias=False))
+            for out_features in z_z_sizes])
 
-        z_zu_sizes = [hidden_features] * num_hidden_layers
+        z_zu_sizes = [hidden_features] * (num_hidden_layers)
         self.net_z_zu = nn.ModuleList([nn.Sequential(
-            nn.Linear(in_features, hidden_features, bias=True),
-            nn.Dropout(dropout))
-            for in_features in z_zu_sizes])
+            nn.Linear(hidden_features, out_features, bias=True))
+            for out_features in z_zu_sizes])
 
-        z_y_sizes = [hidden_features] * (num_hidden_layers + 1)
+        z_y_sizes = [hidden_features] * (num_hidden_layers) + [1]
         self.net_z_y = nn.ModuleList([nn.Sequential(
-                nn.Linear(1, out_features, bias=False),
-                nn.Dropout(dropout))
+                nn.Linear(1, out_features, bias=False))
             for out_features in z_y_sizes])
 
         z_yu_sizes = [in_features - 1] * 1 + [hidden_features] * num_hidden_layers
         self.net_z_yu = nn.ModuleList([nn.Sequential(
-                nn.Linear(in_features, 1, bias=True),
-                nn.Dropout(dropout))
+                nn.Linear(in_features, 1, bias=True))
             for in_features in z_yu_sizes])
 
-        z_u_sizes = [in_features - 1] * 1 + [hidden_features] * num_hidden_layers
+        z_u_sizes = zip([in_features - 1] * 1 + [hidden_features] * num_hidden_layers, [hidden_features] * num_hidden_layers + [1])
         self.net_z_u = nn.ModuleList([nn.Sequential(
-            nn.Linear(in_features, hidden_features, bias=True),
-            nn.Dropout(dropout))
-            for in_features in z_u_sizes])
+            nn.Linear(in_features, out_features, bias=True))
+            for (in_features, out_features) in z_u_sizes])
 
-        self.final_layer = nn.Linear(hidden_features, 1, bias=False)
+        # self.final_layer = nn.Linear(hidden_features, 1, bias=False)
 
         pass
 
@@ -129,11 +110,14 @@ class FCBlock(nn.Module):
         for i in range(1, self.num_hidden_layers + 1):
             z_input = self.net_z_u[i](u_input) + self.net_z_y[i](torch.mul(y_input, self.net_z_yu[i](u_input))) \
                       + self.net_z_z[i - 1](torch.mul(z_input, self.net_z_zu[i - 1](u_input)))
+            if i == 3:
+                output = z_input
+                break
             z_output = torch.tanh(z_input)
             u_input = self.net_z_u[i](u_input)
             z_input = z_output
 
-        output = self.final_layer(z_input)
+        # output = self.final_layer(z_input)
 
         return output
 
@@ -166,7 +150,6 @@ class SingleBVPNet(nn.Module):
                 for sublayer in layer:
                     if isinstance(sublayer, nn.Linear):
                         sublayer.weight.clamp_(0)
-
 
 ########################
 # Initialization methods

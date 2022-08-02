@@ -22,10 +22,10 @@ def initialize_soccer_incomplete(dataset):
         lam_da = dvdx[:, :1].squeeze()
         lam_va = dvdx[:, 1:2].squeeze()
         lam_dd = dvdx[:, 2:3].squeeze()
-        lam_dv = dvdx[:, 3:].squeeze()
+        lam_dv = dvdx[:, 3:4].squeeze()
 
-        v1 = x[:, :, 2]
-        v2 = x[:, :, 4]
+        v1 = x[:, :, 2].squeeze()
+        v2 = x[:, :, 4].squeeze()
 
         # action candidates
         u_c = torch.tensor([-dataset.uMax, dataset.uMax])
@@ -45,8 +45,8 @@ def initialize_soccer_incomplete(dataset):
             u[i] = u_c[u_index]
             d[i] = d_c[d_index]
 
-        u = u.to(device)
-        d = d.to(device)
+        u = u.squeeze().to(device)
+        d = d.squeeze().to(device)
 
         ham = lam_da * v1 + lam_va * u + lam_dd * v2 + lam_dv * d
 

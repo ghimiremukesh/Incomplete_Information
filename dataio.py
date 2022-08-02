@@ -39,7 +39,9 @@ class SoccerIncomplete(Dataset):
         start_time = 0.
         pos = torch.zeros(self.numpoints, 4).uniform_(-1, 1) # states
         # probability with which the nature selects the type
-        p = torch.zeros(1, ).uniform_(0, 1)
+        # p = torch.zeros(1).uniform_(0, 1)
+        # p = torch.zeros(self.numpoints, 1).uniform_(0, 1)
+        p = 0.5
 
         # random process p_t = p0
         p_t = torch.zeros(self.numpoints, 1).uniform_(0, 1)
@@ -66,7 +68,10 @@ class SoccerIncomplete(Dataset):
                 coords[i, 4] = 0
 
         # boundary values for the zero sum game V(T, ., .) = \sum p_i g_i(x); g_1(x) = -g_2(x) = (d_1 - d_2)
-        boundary_values = (p * (coords[:, 1] - coords[:, 3]) + (torch.ones_like(p) - p) * (coords[:, 3] - coords[:, 1])).reshape(-1,1)
+        # boundary_values = (p * (coords[:, 1] - coords[:, 3]) + (torch.ones_like(p) - p) * (coords[:, 3] - coords[:, 1])).reshape(-1,1)
+        boundary_values = (p * (coords[:, 1] - coords[:, 3]) + (1 - p) * (
+                    coords[:, 3] - coords[:, 1])).reshape(-1, 1)
+        # boundary_values = (torch.mul(p, (coords[:, 1] - coords[:, 3]).reshape(-1,1)) + torch.mul((torch.ones_like(p) - p), (coords[:, 3] - coords[:, 1]).reshape(-1,1))).reshape(-1,1)
 
         if self.pretrain:
             dirichlet_mask = torch.ones(coords.shape[0], 1) > 0

@@ -26,7 +26,7 @@ p.add_argument('--batch_size', type=int, default=32)
 p.add_argument('--lr', type=float, default=2e-5, help='learning rate. default=2e-5')
 
 # 200000 for hybrid, 100000 for supervised, 160000 for self-supervised
-p.add_argument('--num_epochs', type=int, default=110000,
+p.add_argument('--num_epochs', type=int, default=40000,
                help='Number of epochs to train for.')
 
 p.add_argument('--epochs_til_ckpt', type=int, default=1000,
@@ -43,7 +43,7 @@ p.add_argument('--num_hl', type=int, default=3, required=False, help='The number
 p.add_argument('--num_nl', type=int, default=32, required=False, help='Number of neurons per hidden layer.')
 p.add_argument('--pretrain_iters', type=int, default=10000, required=False, help='Number of pretrain iterations')
 p.add_argument('--counter_start', type=int, default=-1, required=False, help='Defines the initial time for the curriculul training')
-p.add_argument('--counter_end', type=int, default=100000, required=False, help='Defines the linear step for curriculum training starting from the initial time')
+p.add_argument('--counter_end', type=int, default=30000, required=False, help='Defines the linear step for curriculum training starting from the initial time')
 p.add_argument('--num_src_samples', type=int, default=100, required=False, help='Number of source samples at each time step')
 
 p.add_argument('--collisionR', type=float, default=0.25, required=False, help='Collision radius between vehicles')
@@ -73,7 +73,7 @@ if opt.counter_end == -1:
   opt.counter_end = opt.num_epochs
 
 
-dataset = dataio.SoccerIncomplete(numpoints=8000, theta=opt.theta, velocity=0, u_max=0.3, d_max=0.1, tMin=opt.tMin,
+dataset = dataio.SoccerIncomplete(numpoints=1000, theta=opt.theta, velocity=0, u_max=0.3, d_max=0.1, tMin=opt.tMin,
                            tMax=opt.tMax, counter_start=opt.counter_start, counter_end=opt.counter_end,
                            pretrain=opt.pretrain, pretrain_iters=opt.pretrain_iters,
                            num_src_samples=opt.num_src_samples, seed=0)
@@ -87,7 +87,7 @@ model.to(device)
 
 loss_fn = loss_functions.initialize_soccer_incomplete(dataset)
 
-root_path = os.path.join(opt.logging_root, 'picnn_arch/')
+root_path = os.path.join(opt.logging_root, 'picnn_arch_new/')
 
 training.train(model=model, train_dataloader=dataloader, epochs=opt.num_epochs, lr=opt.lr,
                steps_til_summary=opt.steps_til_summary,epochs_til_checkpoint=opt.epochs_til_ckpt, model_dir=root_path,

@@ -129,6 +129,13 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
                     optim.step()
                     model.convexify()
 
+                    parm = {}
+
+                    for name, parameters in model.net.net_z_z.named_parameters():
+                        parm[name] = parameters.detach().cpu().numpy()
+
+                    # print()
+
                 pbar.update(1)
 
                 if not total_steps % steps_til_summary:

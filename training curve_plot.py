@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-f = open('logs/soccer_hji_c_ham/checkpoints/train_losses_final.txt', 'r').readlines()
+f = open('experiment_scripts/logs/picnn_arch_new/checkpoints/train_losses_final.txt', 'r').readlines()
 N = len(f)
 print(N)
 train_err = []
@@ -20,6 +20,6 @@ axs.set_yscale('log')
 axs.plot(x, train_err, 'g-', label='train loss')
 plt.legend()
 
-title = 'HJI VI Network Training Loss'
+title = 'Training Loss with PICNN'
 axs.set_title(title, fontsize=20)
 plt.show()
