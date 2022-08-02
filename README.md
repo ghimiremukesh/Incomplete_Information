@@ -17,3 +17,9 @@ To train the model, run experiment_scripts/train_soccer_hji.py
 ### SIMULATION
 
 To generate the trajectory, run validation_scripts/soccer_trajectory.py
+
+
+### Credits
+<hr>
+The network architecture (PICNN) is based on the following repo.
+<li>[ICNN](https://github.com/locuslab/icnn)</li>
