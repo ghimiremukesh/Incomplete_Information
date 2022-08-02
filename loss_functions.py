@@ -19,8 +19,8 @@ def initialize_soccer_incomplete(dataset):
         dvdt = jac[..., 0, 0].squeeze()
 
         # calculate hessian only with respect to p
-        d2vdx, _ = diff_operators.hessian(y, x)
-        d2vdp = d2vdx[..., 0, -1].squeeze()
+        hess, _ = diff_operators.hessian(y, x)
+        d2vdp = hess[..., -1, -1].squeeze()
 
         # co-states for hamiltonian H = argmax_u argmin_d = <\lambda, f>
         lam_da = dvdx[:, :1].squeeze()

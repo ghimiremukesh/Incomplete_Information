@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-f = open('experiment_scripts/logs/picnn_arch_new/checkpoints/train_losses_final.txt', 'r').readlines()
+f = open('experiment_scripts/logs/tests/checkpoints/train_losses_final.txt', 'r').readlines()
 N = len(f)
 print(N)
 train_err = []

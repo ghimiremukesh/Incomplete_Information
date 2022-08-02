@@ -146,10 +146,12 @@ class SoccerHJI(Dataset):
             # make sure we have training samples at the initial time
             coords[-self.N_src_samples:, 0] = start_time
 
-        # if t==1 velocities must also be 0, inverted time, t=1 is initial time
+        # if t==1 positions and velocities must also be 0, inverted time, t=1 is initial time
         for i in range(len(coords)):
             if coords[i, 0] == 1:
+                coords[i, 1] = 0
                 coords[i, 2] = 0
+                coords[i, 3] = 0
                 coords[i, 4] = 0
 
         # boundary values -- zero-sum game
