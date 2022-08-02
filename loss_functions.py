@@ -18,6 +18,10 @@ def initialize_soccer_incomplete(dataset):
         dvdx = jac[..., 0, 1:-1].squeeze() # exclude the last one
         dvdt = jac[..., 0, 0].squeeze()
 
+        # calculate hessian only with respect to p
+        d2vdx, _ = diff_operators.hessian(y, x)
+        d2vdp = d2vdx[..., 0, -1].squeeze()
+
         # co-states for hamiltonian H = argmax_u argmin_d = <\lambda, f>
         lam_da = dvdx[:, :1].squeeze()
         lam_va = dvdx[:, 1:2].squeeze()
@@ -54,7 +58,8 @@ def initialize_soccer_incomplete(dataset):
             diff_constraint_hom = torch.Tensor([0])
         else:
             # hji equation -dv/dt because the time is backward during training
-            diff_constraint_hom = -dvdt + ham
+            # diff_constraint_hom = -dvdt + ham
+            diff_constraint_hom = torch.min(-dvdt + ham, d2vdp)
 
         # boundary condition check
         dirichlet = y[dirichlet_mask] - source_boundary_values[dirichlet_mask]
