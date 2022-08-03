@@ -23,22 +23,31 @@ def initialize_soccer_incomplete(dataset):
         d2vdp = hess[..., -1, -1].squeeze()
 
         # co-states for hamiltonian H = argmax_u argmin_d = <\lambda, f>
-        lam_da = dvdx[:, :1].squeeze()
-        lam_va = dvdx[:, 1:2].squeeze()
-        lam_dd = dvdx[:, 2:3].squeeze()
-        lam_dv = dvdx[:, 3:4].squeeze()
+        # lam_da = dvdx[:, :1].squeeze()
+        # lam_va = dvdx[:, 1:2].squeeze()
+        # lam_dd = dvdx[:, 2:3].squeeze()
+        # lam_dv = dvdx[:, 3:4].squeeze()
 
-        v1 = x[:, :, 2].squeeze()
-        v2 = x[:, :, 4].squeeze()
+        # co-states with relative coordinates
+        lam_d = dvdx[:, :1].squeeze()
+        lam_v = dvdx[:, -1:].squeeze()
+
+        # v1 = x[:, :, 2].squeeze()
+        # v2 = x[:, :, 4].squeeze()
+
+        del_v = x[:, :, 2].squeeze()
 
         # action candidates
         u_c = torch.tensor([-dataset.uMax, dataset.uMax])
         d_c = torch.tensor([-dataset.dMax, dataset.dMax])
         H = torch.zeros(dataset.numpoints, 2, 2)
 
+        # for i in range(len(u_c)):
+        #     for j in range(len(d_c)):
+        #         H[:, i, j] = lam_da * v1 + lam_va * u_c[i] + lam_dd * v2 + lam_dv * d_c[j]
         for i in range(len(u_c)):
             for j in range(len(d_c)):
-                H[:, i, j] = lam_da * v1 + lam_va * u_c[i] + lam_dd * v2 + lam_dv * d_c[j]
+                H[:, i, j] = lam_d * del_v + lam_v * (u_c[i] - d_c[j])
 
         u = torch.zeros(dataset.numpoints)
         d = torch.zeros(dataset.numpoints)
@@ -52,7 +61,8 @@ def initialize_soccer_incomplete(dataset):
         u = u.squeeze().to(device)
         d = d.squeeze().to(device)
 
-        ham = lam_da * v1 + lam_va * u + lam_dd * v2 + lam_dv * d
+        # ham = lam_da * v1 + lam_va * u + lam_dd * v2 + lam_dv * d
+        ham = lam_d * del_v + lam_v * (u - d)
 
         if torch.all(dirichlet_mask):
             diff_constraint_hom = torch.Tensor([0])
@@ -65,8 +75,8 @@ def initialize_soccer_incomplete(dataset):
         dirichlet = y[dirichlet_mask] - source_boundary_values[dirichlet_mask]
 
         # A factor of (2e5, 100) to make loss roughly equal
-        return {'dirichlet': torch.abs(dirichlet).sum(),  # 1e4
-                'diff_constraint_hom': torch.abs(diff_constraint_hom).sum() / 6}
+        return {'dirichlet': torch.abs(dirichlet).sum()/6,  # 1e4
+                'diff_constraint_hom': torch.abs(diff_constraint_hom).sum()}
 
     return soccer_incomplete
 

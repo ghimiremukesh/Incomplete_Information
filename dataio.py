@@ -19,8 +19,8 @@ class SoccerIncomplete(Dataset):
         self.tMin = tMin
         self.tMax = tMax
 
-        self.num_states = 4 # d1, v1, d2, v2
-
+        # self.num_states = 4 # d1, v1, d2, v2
+        self.num_states = 2 # dx, dv
         self.N_src_samples = num_src_samples
 
         self.pretrain = pretrain
@@ -37,13 +37,14 @@ class SoccerIncomplete(Dataset):
 
     def __getitem__(self, idx):
         start_time = 0.
-        pos = torch.zeros(self.numpoints, 4).uniform_(-1, 1) # states
+        # pos = torch.zeros(self.numpoints, 4).uniform_(-1, 1) # states
+        pos = torch.zeros(self.numpoints, 2).uniform_(-1, 1) # dx and dv
         # probability with which the nature selects the type
         # p = torch.zeros(1).uniform_(0, 1)
         # p = torch.zeros(self.numpoints, 1).uniform_(0, 1)
         p = 0.5
 
-        # random process p_t = p0
+        # random process p_t = p_0
         p_t = torch.zeros(self.numpoints, 1).uniform_(0, 1)
 
         coords = torch.cat((pos, p_t), dim=1)
@@ -64,14 +65,18 @@ class SoccerIncomplete(Dataset):
         # if t==1 velocities must also be 0, inverted time, t=1 is initial time
         for i in range(len(coords)):
             if coords[i, 0] == 1:
-                coords[i, 2] = 0
-                coords[i, 4] = 0
+                coords[i, 1] = 0  # dx = 0
+                coords[i, 2] = 0  # dv = 0
+                # coords[i, 4] = 0
 
         # boundary values for the zero sum game V(T, ., .) = \sum p_i g_i(x); g_1(x) = -g_2(x) = (d_1 - d_2)
         # boundary_values = (p * (coords[:, 1] - coords[:, 3]) + (torch.ones_like(p) - p) * (coords[:, 3] - coords[:, 1])).reshape(-1,1)
-        boundary_values = (p * (coords[:, 1] - coords[:, 3]) + (1 - p) * (
-                    coords[:, 3] - coords[:, 1])).reshape(-1, 1)
+        # boundary_values = (p * (coords[:, 1] - coords[:, 3]) + (1 - p) * (
+        #             coords[:, 3] - coords[:, 1])).reshape(-1, 1)
         # boundary_values = (torch.mul(p, (coords[:, 1] - coords[:, 3]).reshape(-1,1)) + torch.mul((torch.ones_like(p) - p), (coords[:, 3] - coords[:, 1]).reshape(-1,1))).reshape(-1,1)
+
+        # for relative coordinates V(T, ., .) = p(del_x) - (1-p) (del_x)
+        boundary_values = ((p * coords[:, 1]) - (1 - p) * coords[:, 1]).reshape(-1, 1)
 
         if self.pretrain:
             dirichlet_mask = torch.ones(coords.shape[0], 1) > 0
