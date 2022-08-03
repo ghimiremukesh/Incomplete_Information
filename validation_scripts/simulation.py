@@ -43,20 +43,20 @@ def value_action(X_nn, t_nn, model):
     lam_da = dvdx[:, :, :1].squeeze()
     lam_va = dvdx[:, :, 1:2].squeeze()
     lam_dd = dvdx[:, :, 2:3].squeeze()
-    lam_dv = dvdx[:, :, 3:4].squeeze()
+    lam_vd = dvdx[:, :, 3:4].squeeze()
 
-    u_c = torch.tensor([-0.3, 0.3]).to(device)
-    d_c = torch.tensor([-0.1, 0.1]).to(device)
-    v1 = torch.tensor(np.array([v1])).squeeze().to(device)
-    v2 = torch.tensor(np.array([v2])).squeeze().to(device)
+    u_c = torch.tensor([-0.3, 0.3]).cuda()
+    d_c = torch.tensor([-0.1, 0.1]).cuda()
+    v1 = torch.tensor([v1]).squeeze().cuda()
+    v2 = torch.tensor([v2]).squeeze().cuda()
     H = torch.zeros(2, 2)
 
     for i in range(len(u_c)):
         for j in range(len(d_c)):
-            H[i, j] = lam_da * v1 + lam_va * u_c[i] + lam_dd * v2 + lam_dv * d_c[j]
+            H[i, j] = lam_da * v1 + lam_va * u_c[i] + lam_dd * v2 + lam_vd * d_c[j]
 
-    u_index = torch.argmin(H[:, :], dim=1)[0]  # maximin
-    d_index = torch.argmax(H[u_index, :])
+    d_index = torch.argmax(H[:, :], dim=1)[1]
+    u_index = torch.argmin(H[:, d_index])  # minmax
     u = u_c[u_index]
     d = d_c[d_index]
 
@@ -139,51 +139,56 @@ def optimization(X_nn, t_nn, dt, model):
     opt_x = opt_sol['opt_x'][index]
 
     p = X_nn[-1, :]
+    if p == 0:
+        p = p + 1e-2
+
     lamb = opt_x[0]
     p1 = opt_x[1]
     p2 = opt_x[2]
     u_prob = np.array([lamb * p1 / p, (1 - lamb) * p2 / p])
 
-    random_u_prob = np.random.choice(u_prob.flatten())
-    index = [i for i in range(len(u_prob)) if u_prob[i] == random_u_prob][0]
-
-    p_curr = opt_x[index + 1]
-
-    ## test for picking u_j randomly with some probability
     X_u1 = copy.deepcopy(X_nn)
     X_u1[-1] = p1
-    u_1, _, _ = value_action(X_u1, t_nn, model)
+    u_1, d_1, _ = value_action(X_u1, t_nn, model)
 
     X_u2 = copy.deepcopy(X_nn)
     X_u2[-1] = p2
-    u_2, _, _ = value_action(X_u2, t_nn, model)
+    u_2, d_2, _ = value_action(X_u2, t_nn, model)
 
     # Pick u1 from the distribution u_prob
-    u_can = [u_1, u_2] # action candidates
-    U_1 = random.choices(u_can, list(u_prob.flatten()))
-    P_t = p1 if np.where(u_can == U_1) == 0 else p2  # pick p_j corresponding to u_j
-    ### test end
+    u_idx = np.array([0, 1])  # action candidates
+    U_idx = random.choices(u_idx, list(u_prob.flatten()))[0]
+    index = [i for i in range(len(u_idx)) if u_idx[i] == U_idx][0]
 
-    X_nn_curr = copy.deepcopy(X_nn)
-    X_nn_curr[-1] = p_curr
-    t_nn_curr = t_nn
-    u1, u2, _ = value_action(X_nn_curr, t_nn_curr, model)
-    p_t = p_curr
+    P_t = p1 if index == 0 else p2  # pick p_j corresponding to u_j
+    U = u_1 if index == 0 else u_2
+    D = d_1 if index == 0 else d_2
 
-    return u1, u2, p_t
+    # U_idx = random.choices(u_idx, list(u_prob.flatten()))
+    # P_t = p1 if np.where(u_idx == U_idx) == 0 else p2  # pick p_j corresponding to u_j
+    # U = u_1 if np.where(u_idx == U_idx) == 0 else u_2
+    # D = d_1 if np.where(u_idx == U_idx) == 0 else d_2
+
+    # X_nn_curr = copy.deepcopy(X_nn)
+    # X_nn_curr[-1] = p_curr
+    # t_nn_curr = t_nn
+    # u1, u2, _ = value_action(X_nn_curr, t_nn_curr, model)
+    # p_t = p_curr
+
+    return U, D, P_t
 
 if __name__ == '__main__':
 
     logging_root = './logs'
 
     # Setting to plot
-    ckpt_path = '../experiment_scripts/logs/tests/checkpoints/model_final.pth'
+    ckpt_path = '../experiment_scripts/logs/picnn_arch_new/checkpoints/model_final.pth'
     activation = 'tanh'
 
     # Initialize and load the model
     model = modules_picnn.SingleBVPNet(in_features=6, out_features=1, type=activation, mode='mlp',
                                  final_layer_factor=1., hidden_features=32, num_hidden_layers=3)
-    model.to(device)
+    model.cuda()
     checkpoint = torch.load(ckpt_path)
     try:
         model_weights = checkpoint['model']
@@ -194,7 +199,7 @@ if __name__ == '__main__':
 
     num_physical = 4
     x0 = torch.zeros(1, num_physical).uniform_(-1, 1)
-    x0[:, 0] = 0  # put them in the center
+    x0[:, 0] = 0.1  # put them in the center
     x0[:, 2] = 0
     x0[:, 1] = 0
     x0[:, 3] = 0
@@ -235,9 +240,25 @@ if __name__ == '__main__':
         else:
             d1[j], v1[j], d2[j], v2[j] = dynamic(X_nn, dt, (u1[j - 1], u2[j - 1]))
             p[j] = p_t
-
-        print(u1[j-1], u2[j-1], p_t)
+        print(j)
 
     print()
-    time_spent = time.time() - start_time
-    print(time_spent)
+    time_spend = time.time() - start_time
+    print('Total solution time: %1.1f' % (time_spend), 'sec')
+    print()
+
+    data = {'d1': d1,
+            'd2': d2,
+            'v1': v1,
+            'v2': v2,
+            'u1': u1,
+            'u2': u2,
+            'p': p,
+            'V': V,
+            't': np.flip(Time)}
+
+    save_data = input('Save data? Enter 0 for no, 1 for yes:')
+
+    if save_data:
+        save_path = 'hji_soccer_case_1.0.mat'
+        scio.savemat(save_path, data)
