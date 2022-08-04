@@ -58,15 +58,17 @@ class FCBlock(nn.Module):
             self.weight_init = nl_weight_init
 
         # non-convex layer
-        z_z_sizes = [hidden_features] * (num_hidden_layers) + [1]
+        z_z_sizes = [hidden_features] * (num_hidden_layers - 1) + [1]
         self.net_z_z = nn.ModuleList([nn.Sequential(
             nn.Linear(hidden_features, out_features, bias=False))
             for out_features in z_z_sizes])
 
-        z_y_sizes = [in_features] * 1 + [hidden_features] * (num_hidden_layers) + [1]
+        z_y_sizes = zip([in_features] * 1 + [hidden_features] * num_hidden_layers, [hidden_features] * num_hidden_layers + [1])
         self.net_z_y = nn.ModuleList([nn.Sequential(
-                nn.Linear(1, out_features, bias=True))
-            for out_features in z_y_sizes])
+                nn.Linear(in_features, out_features, bias=True))
+            for (in_features, out_features) in z_y_sizes])
+
+        print()
 
     def forward(self, coords, params=None, **kwargs):
         if params is None:
