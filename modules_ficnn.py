@@ -63,12 +63,10 @@ class FCBlock(nn.Module):
             nn.Linear(hidden_features, out_features, bias=False))
             for out_features in z_z_sizes])
 
-        z_y_sizes = zip([in_features] * 1 + [hidden_features] * num_hidden_layers, [hidden_features] * num_hidden_layers + [1])
+        z_y_sizes = [hidden_features] * (num_hidden_layers) + [1]
         self.net_z_y = nn.ModuleList([nn.Sequential(
                 nn.Linear(in_features, out_features, bias=True))
-            for (in_features, out_features) in z_y_sizes])
-
-        print()
+            for out_features in z_y_sizes])
 
     def forward(self, coords, params=None, **kwargs):
         if params is None:
