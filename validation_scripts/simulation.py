@@ -155,14 +155,18 @@ def optimization(X_nn, t_nn, dt, model):
     X_u2[-1] = p2
     u_2, d_2, _ = value_action(X_u2, t_nn, model)
 
-    # Pick u1 from the distribution u_prob
-    u_idx = np.array([0, 1])  # action candidates
-    U_idx = random.choices(u_idx, list(u_prob.flatten()))[0]
-    index = [i for i in range(len(u_idx)) if u_idx[i] == U_idx][0]
+    if u_1 == u_2:
+        P_t = p
+        U, D, _ = value_action(X_nn, t_nn, model)
+    else:
+        # Pick u1 from the distribution u_prob
+        u_idx = np.array([0, 1])  # action candidates
+        U_idx = random.choices(u_idx, list(u_prob.flatten()))[0]
+        index = [i for i in range(len(u_idx)) if u_idx[i] == U_idx][0]
 
-    P_t = p1 if index == 0 else p2  # pick p_j corresponding to u_j
-    U = u_1 if index == 0 else u_2
-    D = d_1 if index == 0 else d_2
+        P_t = p1 if index == 0 else p2  # pick p_j corresponding to u_j
+        U = u_1 if index == 0 else u_2
+        D = d_1 if index == 0 else d_2
 
     # U_idx = random.choices(u_idx, list(u_prob.flatten()))
     # P_t = p1 if np.where(u_idx == U_idx) == 0 else p2  # pick p_j corresponding to u_j
@@ -182,7 +186,7 @@ if __name__ == '__main__':
     logging_root = './logs'
 
     # Setting to plot
-    ckpt_path = '../experiment_scripts/logs/picnn_arch_new/checkpoints/model_final.pth'
+    ckpt_path = '../experiment_scripts/logs/min hji/picnn_arch_test_0.5/checkpoints/model_final.pth'
     activation = 'tanh'
 
     # Initialize and load the model
