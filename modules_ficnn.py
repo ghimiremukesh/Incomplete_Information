@@ -82,9 +82,9 @@ class FCBlock(nn.Module):
 
         z_input = torch.tanh(z_input)
 
-        for i in range(1, self.num_hidden_layers + 2):
+        for i in range(1, self.num_hidden_layers + 1):
             z_input = self.net_z_y[i](coords) + self.net_z_z[i - 1](z_input)
-            if i == 4:
+            if i == 3:
                 output = z_input
                 break
             z_output = torch.tanh(z_input)
