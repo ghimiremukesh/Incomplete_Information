@@ -41,7 +41,7 @@ ax3.set_ylabel('Value')
 ax3.set_xlabel('TIme')
 
 fig4, ax4 = plt.subplots(1, 1)
-ax4.plot(t, p, label="NN Value")
+ax4.plot(t, p)
 ax4.set_ylabel('Belief')
 ax4.set_xlabel('Time')
 
