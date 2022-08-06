@@ -12,6 +12,7 @@ from scipy.optimize import minimize
 import matplotlib.pyplot as plt
 import copy
 import random
+from itertools import product
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -159,20 +160,20 @@ def optimization(X_nn, t_nn, dt, model):
         constrain = var[0] * var[1] + (1 - var[0]) * var[2] - X_nn[-1]
         return abs(constrain)
 
-    Lam = np.linspace(0, 1, num=1000)
-    P1 = np.linspace(0, 1, num=1000)
-    P2 = np.linspace(0, 1, num=1000)
+    Lam = np.linspace(0, 1, num=50)
+    P1 = np.linspace(0, 1, num=50)
+    P2 = np.linspace(0, 1, num=50)
 
     opt_sol = {'sol': [],
                'opt_x': []}
 
     # 1-D grid search for lambda, p1, p2
-    for (lam, p1, p2) in zip(Lam, P1, P2):
+    for (lam, p1, p2) in product(Lam, P1, P2):
         var = np.array([lam, p1, p1])
-        sol = objective(var, X_nn, t_nn, dt, model)
         constrain = constraint(var, X_nn)
 
         if constrain <= 5e-3:
+            sol = objective(var, X_nn, t_nn, dt, model)
             opt_sol['sol'].append(np.array([sol]))
             opt_sol['opt_x'].append(np.array([lam, p1, p2]))
 
@@ -216,7 +217,7 @@ if __name__ == '__main__':
     logging_root = './logs'
 
     # Setting to plot
-    ckpt_path = '../experiment_scripts/logs/min hji/picnn_arch_test_1.0/checkpoints/model_final.pth'
+    ckpt_path = '../experiment_scripts/logs/min hji/picnn_arch_test_0.0/checkpoints/model_final.pth'
     activation = 'tanh'
 
     # Initialize and load the model
@@ -291,8 +292,8 @@ if __name__ == '__main__':
             'V': V,
             't': np.flip(Time)}
 
-    save_data = input('Save data? Enter 0 for no, 1 for yes:')
+    save_data = 1 #input('Save data? Enter 0 for no, 1 for yes:')
 
     if save_data:
-        save_path = 'hji_soccer_case_1.0.mat'
+        save_path = 'hji_soccer_case_0.0.mat'
         scio.savemat(save_path, data)
