@@ -169,7 +169,7 @@ def optimization(X_nn, t_nn, dt, model):
 
     # 1-D grid search for lambda, p1, p2
     for (lam, p1, p2) in product(Lam, P1, P2):
-        var = np.array([lam, p1, p1])
+        var = np.array([lam, p1, p2])
         constrain = constraint(var, X_nn)
 
         if constrain <= 5e-3:
