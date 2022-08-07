@@ -1,6 +1,7 @@
 # Enable import from parent package
 import sys
 import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import modules, diff_operators, modules_picnn
@@ -12,10 +13,59 @@ from scipy.optimize import minimize
 import matplotlib.pyplot as plt
 import copy
 import random
+from itertools import product
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
+
 def value_action(X_nn, t_nn, model):
+    d = X_nn[0]
+    v = X_nn[1]
+    p = X_nn[2]
+
+    X = np.vstack((d, v, p))
+    X = torch.tensor(X, dtype=torch.float32, requires_grad=True).T
+    t = torch.tensor(t_nn, dtype=torch.float32, requires_grad=True)
+    coords = torch.cat((t, X), dim=1)
+
+    model_in = {'coords': coords.to(device)}
+    model_output = model(model_in)
+
+    x = model_output['model_in']
+    y = model_output['model_out']
+
+    jac, _ = diff_operators.jacobian(y, x)
+
+    # partial gradient of V w.r.t. time and state
+    dvdt = jac[..., 0, 0]
+    dvdx = jac[..., 0, 1:]
+
+    # costates
+    lam_d = dvdx[:, :, :1].squeeze()
+    lam_v = dvdx[:, :, 1:2].squeeze()
+
+    u_c = torch.tensor([-0.3, 0.3]).to(device)
+    d_c = torch.tensor([-0.1, 0.1]).to(device)
+    v = torch.tensor(np.array([v])).squeeze().to(device)
+    H = torch.zeros(2, 2)
+
+    for i in range(len(u_c)):
+        for j in range(len(d_c)):
+            H[i, j] = lam_d * v + lam_v * (u_c[i] - d_c[j])
+
+    d_index = torch.argmax(H[:, :], dim=1)[1]
+    u_index = torch.argmin(H[:, d_index])  # minmax
+    u = u_c[u_index]
+    d = d_c[d_index]
+
+    u = u.detach().cpu().numpy()
+    d = d.detach().cpu().numpy()
+    y = y.detach().cpu().numpy().squeeze()
+
+    return u, d, y
+
+
+def hji_compute(X_nn, t_nn, model):
     d = X_nn[0]
     v = X_nn[1]
     p = X_nn[2]
@@ -41,25 +91,27 @@ def value_action(X_nn, t_nn, model):
     lam_d = dvdx[:, :, :1].squeeze()
     lam_v = dvdx[:, :, 1:2].squeeze()
 
-    u_c = torch.tensor([-0.3, 0.3]).cuda()
-    d_c = torch.tensor([-0.1, 0.1]).cuda()
-    del_v = torch.tensor([v]).squeeze().cuda()
+    u_c = torch.tensor([-0.3, 0.3]).to(device)
+    d_c = torch.tensor([-0.1, 0.1]).to(device)
+    v = torch.tensor(np.array([v])).squeeze().to(device)
     H = torch.zeros(2, 2)
 
     for i in range(len(u_c)):
         for j in range(len(d_c)):
-            H[i, j] = lam_d * del_v + lam_v * (u_c[i] - d_c[j])
+            H[i, j] = lam_d * v + lam_v * (u_c[i] - d_c[j])
 
     d_index = torch.argmax(H[:, :], dim=1)[1]
     u_index = torch.argmin(H[:, d_index])  # minmax
     u = u_c[u_index]
     d = d_c[d_index]
 
-    u = u.detach().cpu().numpy()
-    d = d.detach().cpu().numpy()
+    ham = lam_d * v + lam_v * (u - d)
+    hji = -dvdt + ham
+    hji = hji.detach().cpu().numpy().squeeze()
     y = y.detach().cpu().numpy().squeeze()
 
-    return u, d, y
+    return hji, y
+
 
 def dynamic(X_nn, dt, action):
     u1, u2 = action
@@ -68,8 +120,14 @@ def dynamic(X_nn, dt, action):
 
     return d, v
 
+
 def optimization(X_nn, t_nn, dt, model):
-    def objective(var, X_nn, t_nn, dt, model):
+    # \sum lambda_j * p_j = p
+    def constraint(var):
+        constrain = var[0] * var[1] + (1 - var[0]) * var[2] - X_nn[-1]
+        return abs(constrain) <= 5e-3
+
+    def objective(var):
         lam_1 = var[0]
         lam_2 = 1 - var[0]
         p1 = var[1]
@@ -79,58 +137,27 @@ def optimization(X_nn, t_nn, dt, model):
 
         # 1. obtain action for splitting point 1 and 2
         # 2. compute value for splitting point 1 and 2
+
         # splitting point 1
         X_nn1 = copy.deepcopy(X_nn)
         X_nn1[-1] = p1
-        u1_s, u2_s, _ = value_action(X_nn1, t_nn, model)
-        d, v = dynamic(X_nn1, dt, (u1_s, u2_s))
-
-        X_nn1 = np.vstack((d, v, p1))
-        t_nn1 = t_nn - dt
-        _, _, V1 = value_action(X_nn1, t_nn1, model)
+        hji_1, V1 = hji_compute(X_nn1, t_nn, model)
 
         # splitting point 2
         X_nn2 = copy.deepcopy(X_nn)
         X_nn2[-1] = p2
-        u1_s, u2_s, _ = value_action(X_nn2, t_nn, model)
-        d, v = dynamic(X_nn1, dt, (u1_s, u2_s))
-
-        X_nn2 = np.vstack((d, v, p2))
-        t_nn2 = t_nn - dt
-        _, _, V2 = value_action(X_nn2, t_nn2, model)
+        hji_2, V2 = hji_compute(X_nn2, t_nn, model)
 
         # loss = V(t_k) - \sum lambda_i * V(t_k+1, p_i)
-        loss = V - (lam_1 * V1 + lam_2 * V2)
+        loss = V - (lam_1 * (V1 + hji_1 * dt) + lam_2 * (V2 + hji_2 * dt))
 
         return loss
 
-    # \sum lambda_j * p_j = p
-    def constraint(var, X_nn):
-        constrain = var[0] * var[1] + (1 - var[0]) * var[2] - X_nn[-1]
-        return constrain
-
-    b = (0.0, 1.0)
-    bnds = (b, b, b)
-
-    cons = {'type': 'eq', 'fun': constraint, 'args': X_nn.T}
-
-    lam = np.linspace(0, 1, num=11)
-
-    opt_sol = {'sol': [],
-               'opt_x': []}
-
-    # 1-D grid search for lambda
-    for i in range(lam.shape[0]):
-        var = np.array([lam[i], 0.5, 0.5])
-
-        sol = minimize(objective, var, args=(X_nn, t_nn, dt, model), method='SLSQP', bounds=bnds, constraints=cons)
-
-        opt_sol['sol'].append(sol.fun)
-        opt_sol['opt_x'].append(sol.x)
-
-    index = np.argmin(opt_sol['sol'])
-    opt_x = opt_sol['opt_x'][index]
-
+    search_space = np.linspace(0, 1, num=11)
+    # 1-D grid search for lambda, p1, p2
+    grid = product(search_space, repeat=3)  # make a grid
+    reduced = filter(constraint, grid)  # apply filter to reduce the space
+    opt_x = min(reduced, key=objective)  # find 3-uple corresponding to min objective func.
     p = X_nn[-1, :]
     if p == 0:
         p = p + 1e-2
@@ -161,32 +188,25 @@ def optimization(X_nn, t_nn, dt, model):
         U = u_1 if index == 0 else u_2
         D = d_1 if index == 0 else d_2
 
-    # U_idx = random.choices(u_idx, list(u_prob.flatten()))
-    # P_t = p1 if np.where(u_idx == U_idx) == 0 else p2  # pick p_j corresponding to u_j
-    # U = u_1 if np.where(u_idx == U_idx) == 0 else u_2
-    # D = d_1 if np.where(u_idx == U_idx) == 0 else d_2
-
-    # X_nn_curr = copy.deepcopy(X_nn)
-    # X_nn_curr[-1] = p_curr
-    # t_nn_curr = t_nn
-    # u1, u2, _ = value_action(X_nn_curr, t_nn_curr, model)
-    # p_t = p_curr
-
-    return U, D, P_t
+    return U, D, P_t, (u_1, u_2, u_prob)
 
 if __name__ == '__main__':
 
     logging_root = './logs'
 
     # Setting to plot
-    ckpt_path = '../experiment_scripts/logs/min hji/picnn_arch_test_1.0/checkpoints/model_final.pth'
+    ckpt_path = '../experiment_scripts/logs/4d_picnn_min_hji/checkpoints/model_final.pth'
     activation = 'tanh'
 
     # Initialize and load the model
-    model = modules_picnn.SingleBVPNet(in_features=6, out_features=1, type=activation, mode='mlp',
-                                 final_layer_factor=1., hidden_features=32, num_hidden_layers=3)
-    model.cuda()
-    checkpoint = torch.load(ckpt_path)
+    model = modules_picnn.SingleBVPNet(in_features=4, out_features=1, type=activation, mode='mlp',
+                                       final_layer_factor=1., hidden_features=32, num_hidden_layers=3)
+    model.to(device)
+    if device == torch.device("cpu"):
+        checkpoint = torch.load(ckpt_path, map_location=device)
+    else:
+        checkpoint = torch.load(ckpt_path)
+
     try:
         model_weights = checkpoint['model']
     except:
@@ -196,8 +216,8 @@ if __name__ == '__main__':
 
     num_physical = 2
     x0 = torch.zeros(1, num_physical).uniform_(-1, 1)
-    x0[:, 0] = 0.1  # relative position
-    x0[:, 2] = 0    # relative speed
+    x0[:, 0] = 0  # put them in the center
+    x0[:, 1] = 0
 
     p = np.array([[0.8]])
     X0 = np.vstack((x0.T, p))
@@ -216,7 +236,8 @@ if __name__ == '__main__':
 
     d[0] = X0[0, :]
     v[0] = X0[1, :]
-    p[0] = X0[4, :]
+    p[0] = X0[2, :]
+    splitting_points = []
 
     start_time = time.time()
 
@@ -225,12 +246,13 @@ if __name__ == '__main__':
         t_nn = np.array([[Time[j - 1]]])
         _, _, V[j - 1] = value_action(X_nn, t_nn, model)
 
-        u1[j - 1], u2[j - 1], p_t = optimization(X_nn, t_nn, dt, model)
+        u1[j - 1], u2[j - 1], p_t, sp = optimization(X_nn, t_nn, dt, model)
         if j == Time.shape[0]:
             break
         else:
             d[j], v[j] = dynamic(X_nn, dt, (u1[j - 1], u2[j - 1]))
             p[j] = p_t
+            splitting_points.append(sp)
         print(j)
 
     print()
@@ -246,8 +268,8 @@ if __name__ == '__main__':
             'V': V,
             't': np.flip(Time)}
 
-    save_data = input('Save data? Enter 0 for no, 1 for yes:')
+    save_data = 1  # input('Save data? Enter 0 for no, 1 for yes:')
 
     if save_data:
-        save_path = 'hji_soccer_case_1.0.mat'
+        save_path = 'hji_soccer_case_0.8_rs.mat'
         scio.savemat(save_path, data)
