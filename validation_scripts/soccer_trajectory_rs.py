@@ -27,7 +27,7 @@ def get_abs_states(u1, u2):
 
     return x_e, x_p
 
-file = 'hji_soccer_case_0.8_rs.mat'
+file = 'relative_0.0.mat'
 data = scipy.io.loadmat(file)
 
 d = data['d'].squeeze()
@@ -41,8 +41,8 @@ t = data['t'].squeeze()
 
 d1, d2 = get_abs_states(u1, u2)
 
-d1 = d1[:, 1]
-d2 = d2[:, 1]
+d1 = d1[:, 0]
+d2 = d2[:, 0]
 fig, ax = plt.subplots(nrows=5, ncols=1, sharex=True)
 ax[0].plot(t, d1)
 ax[0].set_ylabel('Attacker')
@@ -70,3 +70,4 @@ ax4.set_ylabel('Belief')
 ax4.set_xlabel('Time')
 
 plt.show()
+

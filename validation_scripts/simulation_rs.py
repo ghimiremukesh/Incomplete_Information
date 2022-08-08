@@ -153,7 +153,7 @@ def optimization(X_nn, t_nn, dt, model):
 
         return loss
 
-    search_space = np.linspace(0, 1, num=11)
+    search_space = np.linspace(0, 1, num=50)
     # 1-D grid search for lambda, p1, p2
     grid = product(search_space, repeat=3)  # make a grid
     reduced = filter(constraint, grid)  # apply filter to reduce the space
@@ -195,7 +195,7 @@ if __name__ == '__main__':
     logging_root = './logs'
 
     # Setting to plot
-    ckpt_path = '../experiment_scripts/logs/4d_picnn_min_hji/checkpoints/model_final.pth'
+    ckpt_path = '../logs/relative_0.0/checkpoints/model_final.pth'
     activation = 'tanh'
 
     # Initialize and load the model
@@ -219,7 +219,7 @@ if __name__ == '__main__':
     x0[:, 0] = 0  # put them in the center
     x0[:, 1] = 0
 
-    p = np.array([[0.8]])
+    p = np.array([[0.0]])
     X0 = np.vstack((x0.T, p))
 
     N = 50
@@ -271,5 +271,5 @@ if __name__ == '__main__':
     save_data = 1  # input('Save data? Enter 0 for no, 1 for yes:')
 
     if save_data:
-        save_path = 'hji_soccer_case_0.8_rs.mat'
+        save_path = 'relative_0.2.mat'
         scio.savemat(save_path, data)
