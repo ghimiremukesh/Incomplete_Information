@@ -197,7 +197,9 @@ def optimization(X_nn, t_nn, dt, model, type):
     p = X_nn[-1, :]
 
     if type == 1:  # p_i corresponds to which type you are
-        p = 1 - p
+        p_i = 1 - p
+    else:
+        p_i = p
 
     if p == 0:
         p = p + 1e-2
@@ -205,7 +207,7 @@ def optimization(X_nn, t_nn, dt, model, type):
     lamb = opt_x[0]
     p1 = opt_x[1]
     p2 = opt_x[2]
-    u_prob = np.array([lamb * p1 / p, (1 - lamb) * p2 / p])
+    u_prob = np.array([lamb * p1 / p_i, (1 - lamb) * p2 / p_i])
 
     X_u1 = copy.deepcopy(X_nn)
     X_u1[-1] = p1
@@ -235,7 +237,7 @@ if __name__ == '__main__':
     logging_root = './logs'
 
     # Setting to plot
-    ckpt_path = '../logs/p_from_coords/checkpoints/model_final.pth'
+    ckpt_path = '../logs/random_p/checkpoints/model_final.pth'
     # ckpt_path = '../experiment_scripts/logs/4d_picnn_min_hji/checkpoints/model_final.pth'
     activation = 'tanh'
 
@@ -255,7 +257,7 @@ if __name__ == '__main__':
     model.load_state_dict(model_weights)
     model.eval()
 
-    num_games = 10
+    num_games = 1
     # p_dist = [0.6, 0.4]
     # types = [0, 1]
     # types_i = np.random.choice(types, size=num_games, p=p_dist) # nature selection from dist
@@ -268,6 +270,7 @@ if __name__ == '__main__':
 
         # probability selections and calculations
         p_dist = np.random.rand()
+        p_dist = 0.047  # for debugging
         p_dist = [p_dist, 1 - p_dist]
         types = [0, 1]
         type_i = np.random.choice(types, p=p_dist)  # nature selection from dist
