@@ -47,10 +47,10 @@ def value_action(X_nn, t_nn, model):
     lam_dd = dvdx[:, :, 2:3].squeeze()
     lam_vd = dvdx[:, :, 3:4].squeeze()
 
-    u_c = torch.tensor([-0.3, 0.3]).cuda()
-    d_c = torch.tensor([-0.1, 0.1]).cuda()
-    v1 = torch.tensor([v1]).squeeze().cuda()
-    v2 = torch.tensor([v2]).squeeze().cuda()
+    u_c = torch.tensor([-0.3, 0.3]).to(device)
+    d_c = torch.tensor([-0.1, 0.1]).to(device)
+    v1 = torch.tensor([v1]).squeeze().to(device)
+    v2 = torch.tensor([v2]).squeeze().to(device)
     H = torch.zeros(2, 2)
 
     for i in range(len(u_c)):
@@ -98,10 +98,10 @@ def hji_compute(X_nn, t_nn, model):
     lam_dd = dvdx[:, :, 2:3].squeeze()
     lam_vd = dvdx[:, :, 3:4].squeeze()
 
-    u_c = torch.tensor([-0.3, 0.3]).cuda()
-    d_c = torch.tensor([-0.1, 0.1]).cuda()
-    v1 = torch.tensor([v1]).squeeze().cuda()
-    v2 = torch.tensor([v2]).squeeze().cuda()
+    u_c = torch.tensor([-0.3, 0.3]).to(device)
+    d_c = torch.tensor([-0.1, 0.1]).to(device)
+    v1 = torch.tensor([v1]).squeeze().to(device)
+    v2 = torch.tensor([v2]).squeeze().to(device)
     H = torch.zeros(2, 2)
 
     for i in range(len(u_c)):
@@ -131,8 +131,12 @@ def dynamic(X_nn, dt, action):
 
     return d1, v1, d2, v2
 
+<<<<<<< HEAD
 def optimization(X_nn, t_nn, dt, model, type):
     # def objective(var, X_nn, t_nn, dt, model):
+=======
+def optimization(X_nn, t_nn, dt, model):
+>>>>>>> 3660546dd5da16af2f55f2f1a773150d6e68f63c
     def objective(var):
         lam_1 = var[0]
         lam_2 = 1 - var[0]
@@ -184,23 +188,37 @@ def optimization(X_nn, t_nn, dt, model, type):
         return loss
 
     # \sum lambda_j * p_j = p
+<<<<<<< HEAD
     # def constraint(var, X_nn):
     def constraint(var):
         constrain = var[0] * var[1] + (1 - var[0]) * var[2] - X_nn[-1]
         return abs(constrain) <= 5e-3
         # return abs(constrain)
+=======
+    def constraint(var):
+        constrain = var[0] * var[1] + (1 - var[0]) * var[2] - X_nn[-1]
+        return abs(constrain) <= 5e-3
+>>>>>>> 3660546dd5da16af2f55f2f1a773150d6e68f63c
 
     Lam = np.linspace(0, 1, num=11)
     P1 = np.linspace(0, 1, num=11)
     P2 = np.linspace(0, 1, num=11)
 
-    opt_sol = {'sol': [],
-               'opt_x': []}
+    # opt_sol = {'sol': [],
+    #            'opt_x': []}
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 3660546dd5da16af2f55f2f1a773150d6e68f63c
     # 1-D grid search for lambda, p1, p2
     grid = product(Lam, P1, P2)  # make a grid
     reduced = filter(constraint, grid)  # apply filter to reduce the space
     opt_x = min(reduced, key=objective)  # find 3-uple corresponding to min objective func.
+<<<<<<< HEAD
+=======
+    # print()
+>>>>>>> 3660546dd5da16af2f55f2f1a773150d6e68f63c
 
     # for (lam, p1, p2) in product(Lam, P1, P2):
     #     var = np.array([lam, p1, p2])
@@ -210,7 +228,11 @@ def optimization(X_nn, t_nn, dt, model, type):
     #         sol = objective(var, X_nn, t_nn, dt, model)
     #         opt_sol['sol'].append(np.array([sol]))
     #         opt_sol['opt_x'].append(np.array([lam, p1, p2]))
+<<<<<<< HEAD
 
+=======
+    #
+>>>>>>> 3660546dd5da16af2f55f2f1a773150d6e68f63c
     # index = np.argmin(opt_sol['sol'])
     # opt_x = opt_sol['opt_x'][index]
 
@@ -261,15 +283,23 @@ if __name__ == '__main__':
     logging_root = './logs'
 
     # Setting to plot
+<<<<<<< HEAD
     # ckpt_path = '../experiment_scripts/logs/min hji/picnn_arch_test_0.8/checkpoints/model_final.pth'
     ckpt_path = '../experiment_scripts/logs/picnn_arch_test1/checkpoints/model_final.pth'
+=======
+    ckpt_path = 'model_final_picnn_0.8.pth'
+>>>>>>> 3660546dd5da16af2f55f2f1a773150d6e68f63c
     activation = 'tanh'
 
     # Initialize and load the model
     model = modules_picnn.SingleBVPNet(in_features=6, out_features=1, type=activation, mode='mlp',
                                  final_layer_factor=1., hidden_features=32, num_hidden_layers=3)
-    model.cuda()
-    checkpoint = torch.load(ckpt_path)
+    model.to(device)
+    if device == torch.device("cpu"):
+        checkpoint = torch.load(ckpt_path, map_location=device)
+    else:
+        checkpoint = torch.load(ckpt_path)
+
     try:
         model_weights = checkpoint['model']
     except:
