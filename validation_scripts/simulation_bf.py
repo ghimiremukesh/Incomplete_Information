@@ -3,7 +3,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import modules, diff_operators, modules_picnn
+import modules, diff_operators, modules_picnn, modules_ficnn
 import time
 import torch
 import numpy as np
@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import copy
 import random
 from itertools import product
+import multiprocessing
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -113,6 +114,7 @@ def hji_compute(X_nn, t_nn, model):
     d = d_c[d_index]
 
     ham = lam_da * v1 + lam_va * u + lam_dd * v2 + lam_vd * d
+    # hji = dvdt - ham
     hji = -dvdt + ham
 
     hji = hji.detach().cpu().numpy().squeeze()
@@ -129,8 +131,9 @@ def dynamic(X_nn, dt, action):
 
     return d1, v1, d2, v2
 
-def optimization(X_nn, t_nn, dt, model):
-    def objective(var, X_nn, t_nn, dt, model):
+def optimization(X_nn, t_nn, dt, model, type):
+    # def objective(var, X_nn, t_nn, dt, model):
+    def objective(var):
         lam_1 = var[0]
         lam_2 = 1 - var[0]
         p1 = var[1]
@@ -140,6 +143,7 @@ def optimization(X_nn, t_nn, dt, model):
 
         # 1. obtain action for splitting point 1 and 2
         # 2. compute value for splitting point 1 and 2
+        # Taylor expansion for V(t+dt, x(t+dt), p)
         # splitting point 1
         X_nn1 = copy.deepcopy(X_nn)
         X_nn1[-1] = p1
@@ -153,49 +157,89 @@ def optimization(X_nn, t_nn, dt, model):
         # loss = V(t_k) - \sum lambda_i * V(t_k+1, p_i)
         loss = V - (lam_1 * (V1 + hji_1 * dt) + lam_2 * (V2 + hji_2 * dt))
 
+        # firstly consider u*, d* from V(t, x(t), p), then do forward dynamic and compute V(t+dt, x(t+dt), p)
+        # # splitting point 1
+        # X_nn1 = copy.deepcopy(X_nn)
+        # X_nn1[-1] = p1
+        # u1_s, u2_s, _ = value_action(X_nn1, t_nn, model)
+        # d1, v1, d2, v2 = dynamic(X_nn1, dt, (u1_s, u2_s))
+        #
+        # X_nn1 = np.vstack((d1, v1, d2, v2, p1))
+        # t_nn1 = t_nn - dt
+        # _, _, V1 = value_action(X_nn1, t_nn1, model)
+        #
+        # # splitting point 2
+        # X_nn2 = copy.deepcopy(X_nn)
+        # X_nn2[-1] = p2
+        # u1_s, u2_s, _ = value_action(X_nn2, t_nn, model)
+        # d1, v1, d2, v2 = dynamic(X_nn1, dt, (u1_s, u2_s))
+        #
+        # X_nn2 = np.vstack((d1, v1, d2, v2, p2))
+        # t_nn2 = t_nn - dt
+        # _, _, V2 = value_action(X_nn2, t_nn2, model)
+        #
+        # # loss = V(t_k) - \sum lambda_i * V(t_k+1, p_i)
+        # loss = V - (lam_1 * V1 + lam_2 * V2)
+
         return loss
 
     # \sum lambda_j * p_j = p
-    def constraint(var, X_nn):
+    # def constraint(var, X_nn):
+    def constraint(var):
         constrain = var[0] * var[1] + (1 - var[0]) * var[2] - X_nn[-1]
-        return abs(constrain)
+        return abs(constrain) <= 5e-3
+        # return abs(constrain)
 
-    Lam = np.linspace(0, 1, num=50)
-    P1 = np.linspace(0, 1, num=50)
-    P2 = np.linspace(0, 1, num=50)
+    Lam = np.linspace(0, 1, num=11)
+    P1 = np.linspace(0, 1, num=11)
+    P2 = np.linspace(0, 1, num=11)
 
     opt_sol = {'sol': [],
                'opt_x': []}
 
     # 1-D grid search for lambda, p1, p2
-    for (lam, p1, p2) in product(Lam, P1, P2):
-        var = np.array([lam, p1, p2])
-        constrain = constraint(var, X_nn)
+    grid = product(Lam, P1, P2)  # make a grid
+    reduced = filter(constraint, grid)  # apply filter to reduce the space
+    opt_x = min(reduced, key=objective)  # find 3-uple corresponding to min objective func.
 
-        if constrain <= 5e-3:
-            sol = objective(var, X_nn, t_nn, dt, model)
-            opt_sol['sol'].append(np.array([sol]))
-            opt_sol['opt_x'].append(np.array([lam, p1, p2]))
+    # for (lam, p1, p2) in product(Lam, P1, P2):
+    #     var = np.array([lam, p1, p2])
+    #     constrain = constraint(var, X_nn)
+    #
+    #     if constrain <= 5e-3:
+    #         sol = objective(var, X_nn, t_nn, dt, model)
+    #         opt_sol['sol'].append(np.array([sol]))
+    #         opt_sol['opt_x'].append(np.array([lam, p1, p2]))
 
-    index = np.argmin(opt_sol['sol'])
-    opt_x = opt_sol['opt_x'][index]
+    # index = np.argmin(opt_sol['sol'])
+    # opt_x = opt_sol['opt_x'][index]
 
     p = X_nn[-1, :]
-    if p == 0:
-        p = p + 1e-2
 
     lamb = opt_x[0]
     p1 = opt_x[1]
     p2 = opt_x[2]
-    u_prob = np.array([lamb * p1 / p, (1 - lamb) * p2 / p])
+
+    if type == 1:  # p_i corresponds to which type you are
+        p_i = 1 - p
+    else:
+        p_i = p
+
+    if p_i == 0:
+        p_i = p_i + 1e-2
+
+    if type == 1:
+        u_prob = np.array([lamb * (1 - p1) / p_i, (1 - lamb) * (1 - p2) / p_i])
+    else:
+        u_prob = np.array([lamb * p1 / p_i, (1 - lamb) * p2 / p_i])
 
     X_u1 = copy.deepcopy(X_nn)
     X_u1[-1] = p1
-    u_1, d_1, _ = value_action(X_u1, t_nn, model)
+    u_1, d_1, V_1 = value_action(X_u1, t_nn, model)
 
     X_u2 = copy.deepcopy(X_nn)
     X_u2[-1] = p2
-    u_2, d_2, _ = value_action(X_u2, t_nn, model)
+    u_2, d_2, V_2 = value_action(X_u2, t_nn, model)
 
     if u_1 == u_2:
         P_t = p
@@ -217,7 +261,8 @@ if __name__ == '__main__':
     logging_root = './logs'
 
     # Setting to plot
-    ckpt_path = '../experiment_scripts/logs/min hji/picnn_arch_test_0.0/checkpoints/model_final.pth'
+    # ckpt_path = '../experiment_scripts/logs/min hji/picnn_arch_test_0.8/checkpoints/model_final.pth'
+    ckpt_path = '../experiment_scripts/logs/picnn_arch_test1/checkpoints/model_final.pth'
     activation = 'tanh'
 
     # Initialize and load the model
@@ -232,68 +277,77 @@ if __name__ == '__main__':
     model.load_state_dict(model_weights)
     model.eval()
 
-    num_physical = 4
-    x0 = torch.zeros(1, num_physical).uniform_(-1, 1)
-    x0[:, 0] = 0.1  # put them in the center
-    x0[:, 2] = 0
-    x0[:, 1] = 0
-    x0[:, 3] = 0
+    num_games = 10
+    for i in range(num_games):
+        num_physical = 4
+        x0 = torch.zeros(1, num_physical).uniform_(-1, 1)
+        x0[:, 0] = 0  # put them in the center
+        x0[:, 2] = 0
+        x0[:, 1] = 0
+        x0[:, 3] = 0
 
-    p = np.array([[0.8]])
-    X0 = np.vstack((x0.T, p))
+        # probability selections and calculations
+        p_dist = np.random.rand()
+        # p_dist = 0.047  # for debugging
+        p_dist = [p_dist, 1 - p_dist]
+        types = [0, 1]
+        type_i = np.random.choice(types, p=p_dist)  # nature selection from dist
+        p_0 = p_dist[0]  # types_i = np.zeros(num_games) # random selection
+        X0 = np.vstack((x0.T, p_0))
 
-    N = 50
-    Time = np.linspace(0, 1, num=N)
-    dt = Time[1] - Time[0]
-    Time = np.flip(Time)
+        N = 50
+        Time = np.linspace(0, 1, num=N)
+        dt = Time[1] - Time[0]
+        Time = np.flip(Time)
 
-    d1 = np.zeros((N,))
-    v1 = np.zeros((N,))
-    u1 = np.zeros((N,))
-    d2 = np.zeros((N,))
-    v2 = np.zeros((N,))
-    u2 = np.zeros((N,))
-    p = np.zeros((N,))
-    V = np.zeros((N,))
+        d1 = np.zeros((N,))
+        v1 = np.zeros((N,))
+        u1 = np.zeros((N,))
+        d2 = np.zeros((N,))
+        v2 = np.zeros((N,))
+        u2 = np.zeros((N,))
+        p = np.zeros((N,))
+        V = np.zeros((N,))
 
-    d1[0] = X0[0, :]
-    v1[0] = X0[1, :]
-    d2[0] = X0[2, :]
-    v2[0] = X0[3, :]
-    p[0] = X0[4, :]
+        d1[0] = X0[0, :]
+        v1[0] = X0[1, :]
+        d2[0] = X0[2, :]
+        v2[0] = X0[3, :]
+        p[0] = X0[4, :]
 
-    start_time = time.time()
+        start_time = time.time()
 
-    for j in range(1, Time.shape[0] + 1):
-        X_nn = np.array([[d1[j - 1]], [v1[j - 1]], [d2[j - 1]], [v2[j - 1]], [p[j - 1]]])
-        t_nn = np.array([[Time[j - 1]]])
-        _, _, V[j - 1] = value_action(X_nn, t_nn, model)
+        for j in range(1, Time.shape[0] + 1):
+            X_nn = np.array([[d1[j - 1]], [v1[j - 1]], [d2[j - 1]], [v2[j - 1]], [p[j - 1]]])
+            t_nn = np.array([[Time[j - 1]]])
+            _, _, V[j - 1] = value_action(X_nn, t_nn, model)
 
-        u1[j - 1], u2[j - 1], p_t = optimization(X_nn, t_nn, dt, model)
-        if j == Time.shape[0]:
-            break
-        else:
-            d1[j], v1[j], d2[j], v2[j] = dynamic(X_nn, dt, (u1[j - 1], u2[j - 1]))
-            p[j] = p_t
-        print(j)
+            u1[j - 1], u2[j - 1], p_t = optimization(X_nn, t_nn, dt, model, type_i)
+            if j == Time.shape[0]:
+                break
+            else:
+                d1[j], v1[j], d2[j], v2[j] = dynamic(X_nn, dt, (u1[j - 1], u2[j - 1]))
+                p[j] = p_t
+            print(j)
 
-    print()
-    time_spend = time.time() - start_time
-    print('Total solution time: %1.1f' % (time_spend), 'sec')
-    print()
+        print()
+        time_spend = time.time() - start_time
+        print('Total solution time: %1.1f' % (time_spend), 'sec')
+        print()
 
-    data = {'d1': d1,
-            'd2': d2,
-            'v1': v1,
-            'v2': v2,
-            'u1': u1,
-            'u2': u2,
-            'p': p,
-            'V': V,
-            't': np.flip(Time)}
+        data = {'d1': d1,
+                'd2': d2,
+                'v1': v1,
+                'v2': v2,
+                'u1': u1,
+                'u2': u2,
+                'p': p,
+                'V': V,
+                'type': type_i,
+                't': np.flip(Time)}
 
-    save_data = 1 #input('Save data? Enter 0 for no, 1 for yes:')
+        save_data = 1 #input('Save data? Enter 0 for no, 1 for yes:')
 
-    if save_data:
-        save_path = 'hji_soccer_case_0.0.mat'
-        scio.savemat(save_path, data)
+        if save_data:
+            save_path = 'hji_soccer_case' + str(i) + '.mat'
+            scio.savemat(save_path, data)
