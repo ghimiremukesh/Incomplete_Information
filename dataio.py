@@ -6,7 +6,7 @@ import math
 
 
 class SoccerIncomplete(Dataset):
-    def __init__(self, numpoints, p=0.5, velocity=0, u_max=0.5, d_max=0.3, tMin=0, tMax=1, counter_start=0,
+    def __init__(self, numpoints, velocity=0, u_max=0.5, d_max=0.3, tMin=0, tMax=1, counter_start=0,
                  counter_end=100e3, pretrain=True, pretrain_iters=2000, num_src_samples=1000, seed=0):
         super().__init__()
         torch.manual_seed(0)
@@ -15,7 +15,8 @@ class SoccerIncomplete(Dataset):
         self.velocity = velocity
         self.uMax = u_max
         self.dMax = d_max
-        self.p = p
+        # self.p = torch.zeros(1).uniform_(0, 1)  # check with a bunch of p
+        # self.p = p
 
         self.tMin = tMin
         self.tMax = tMax
@@ -41,11 +42,12 @@ class SoccerIncomplete(Dataset):
         start_time = 0.
         # pos = torch.zeros(self.numpoints, 4).uniform_(-1, 1) # states
         pos = torch.zeros(self.numpoints, 2).uniform_(-1, 1) # dx and dv
-
+        # self.p = torch.zeros(1).uniform_(0, 1)
         # random process p_t = p_0
         p_t = torch.zeros(self.numpoints, 1).uniform_(0, 1)
 
         coords = torch.cat((pos, p_t), dim=1)
+
 
         if self.pretrain:
             # only sample in time around initial condition
@@ -73,8 +75,8 @@ class SoccerIncomplete(Dataset):
         #             coords[:, 3] - coords[:, 1])).reshape(-1, 1)
         # boundary_values = (torch.mul(p, (coords[:, 1] - coords[:, 3]).reshape(-1,1)) + torch.mul((torch.ones_like(p) - p), (coords[:, 3] - coords[:, 1]).reshape(-1,1))).reshape(-1,1)
 
-        # for relative coordinates V(T, ., .) = p(del_x) - (1-p) (del_x)
-        boundary_values = -1 * ((self.p * coords[:, 1]) - (1 - self.p) * coords[:, 1]).reshape(-1, 1)
+        # for relative coordinates V(T, ., .) = p(del_x) - (1-p) (del_x)  # try with
+        boundary_values = -1 * ((coords[:, -1] * coords[:, 1]) - (1 - coords[:, -1]) * coords[:, 1]).reshape(-1, 1)
 
         if self.pretrain:
             dirichlet_mask = torch.ones(coords.shape[0], 1) > 0
@@ -86,6 +88,9 @@ class SoccerIncomplete(Dataset):
             self.pretrain_counter += 1
         elif self.counter < self.full_count:
             self.counter += 1
+
+        if self.pretrain and self.pretrain_counter == self.pretrain_iters:
+            self.pretrain = False
 
         return {'coords': coords}, {'source_boundary_values': boundary_values,
                                     'dirichlet_mask': dirichlet_mask}
