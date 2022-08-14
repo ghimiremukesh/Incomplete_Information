@@ -131,12 +131,8 @@ def dynamic(X_nn, dt, action):
 
     return d1, v1, d2, v2
 
-<<<<<<< HEAD
 def optimization(X_nn, t_nn, dt, model, type):
     # def objective(var, X_nn, t_nn, dt, model):
-=======
-def optimization(X_nn, t_nn, dt, model):
->>>>>>> 3660546dd5da16af2f55f2f1a773150d6e68f63c
     def objective(var):
         lam_1 = var[0]
         lam_2 = 1 - var[0]
@@ -188,18 +184,12 @@ def optimization(X_nn, t_nn, dt, model):
         return loss
 
     # \sum lambda_j * p_j = p
-<<<<<<< HEAD
-    # def constraint(var, X_nn):
+
     def constraint(var):
         constrain = var[0] * var[1] + (1 - var[0]) * var[2] - X_nn[-1]
         return abs(constrain) <= 5e-3
         # return abs(constrain)
-=======
-    def constraint(var):
-        constrain = var[0] * var[1] + (1 - var[0]) * var[2] - X_nn[-1]
-        return abs(constrain) <= 5e-3
->>>>>>> 3660546dd5da16af2f55f2f1a773150d6e68f63c
-
+        
     Lam = np.linspace(0, 1, num=11)
     P1 = np.linspace(0, 1, num=11)
     P2 = np.linspace(0, 1, num=11)
@@ -207,18 +197,11 @@ def optimization(X_nn, t_nn, dt, model):
     # opt_sol = {'sol': [],
     #            'opt_x': []}
 
-<<<<<<< HEAD
-=======
-
->>>>>>> 3660546dd5da16af2f55f2f1a773150d6e68f63c
     # 1-D grid search for lambda, p1, p2
     grid = product(Lam, P1, P2)  # make a grid
     reduced = filter(constraint, grid)  # apply filter to reduce the space
     opt_x = min(reduced, key=objective)  # find 3-uple corresponding to min objective func.
-<<<<<<< HEAD
-=======
-    # print()
->>>>>>> 3660546dd5da16af2f55f2f1a773150d6e68f63c
+
 
     # for (lam, p1, p2) in product(Lam, P1, P2):
     #     var = np.array([lam, p1, p2])
@@ -228,11 +211,7 @@ def optimization(X_nn, t_nn, dt, model):
     #         sol = objective(var, X_nn, t_nn, dt, model)
     #         opt_sol['sol'].append(np.array([sol]))
     #         opt_sol['opt_x'].append(np.array([lam, p1, p2]))
-<<<<<<< HEAD
 
-=======
-    #
->>>>>>> 3660546dd5da16af2f55f2f1a773150d6e68f63c
     # index = np.argmin(opt_sol['sol'])
     # opt_x = opt_sol['opt_x'][index]
 
@@ -283,12 +262,9 @@ if __name__ == '__main__':
     logging_root = './logs'
 
     # Setting to plot
-<<<<<<< HEAD
+    
     # ckpt_path = '../experiment_scripts/logs/min hji/picnn_arch_test_0.8/checkpoints/model_final.pth'
     ckpt_path = '../experiment_scripts/logs/picnn_arch_test1/checkpoints/model_final.pth'
-=======
-    ckpt_path = 'model_final_picnn_0.8.pth'
->>>>>>> 3660546dd5da16af2f55f2f1a773150d6e68f63c
     activation = 'tanh'
 
     # Initialize and load the model
