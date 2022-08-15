@@ -7,6 +7,7 @@ except ImportError:  # pragma: no cover
     # noinspection PyProtectedMember
     from graphviz import ExecutableNotFound
 from pkg_resources import get_distribution
+from subprocess import SubprocessError
 
 _NODE_VAL_TYPES = Any
 NodeValue = Any  # Union[float, int, str]
@@ -18,6 +19,25 @@ NodeValueList = Union[
     List[int],
     List[str],
 ]
+_SVG_XML_TEMPLATE = """
+<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg">
+<style>
+    .value {{
+        font: 300 16px sans-serif;
+        text-align: center;
+        dominant-baseline: middle;
+        text-anchor: middle;
+    }}
+    .node {{
+        fill: lightgray;
+        stroke-width: 1;
+    }}
+</style>
+<g stroke="#000000">
+{body}
+</g>
+</svg>
+"""
 
 # Create a Custom Binary Tree
 class Node:
@@ -311,134 +331,134 @@ class Node:
 
         setattr(parent, child_attr, None)
 
-    # def _repr_svg_(self) -> str:  # pragma: no cover
-    #     """Display the binary tree using Graphviz (used for `Jupyter notebooks`_).
+    def _repr_svg_(self) -> str:  # pragma: no cover
+        """Display the binary tree using Graphviz (used for `Jupyter notebooks`_).
 
-    #     .. _Jupyter notebooks: https://jupyter.org
-    #     """
-    #     try:
-    #         try:
-    #             # noinspection PyProtectedMember
-    #             return str(self.graphviz()._repr_svg_())
-    #         except AttributeError:
-    #             # noinspection PyProtectedMember
-    #             return str(self.graphviz()._repr_image_svg_xml())
+        .. _Jupyter notebooks: https://jupyter.org
+        """
+        try:
+            try:
+                # noinspection PyProtectedMember
+                return str(self.graphviz()._repr_svg_())
+            except AttributeError:
+                # noinspection PyProtectedMember
+                return str(self.graphviz()._repr_image_svg_xml())
 
-    #     except (SubprocessError, ExecutableNotFound, FileNotFoundError):
-    #         return self.svg()
+        except (SubprocessError, ExecutableNotFound, FileNotFoundError):
+            return self.svg()
 
-    # def svg(self, node_radius: int = 16) -> str:
-    #     """Generate SVG XML.
+    def svg(self, node_radius: int = 16) -> str:
+        """Generate SVG XML.
 
-    #     :param node_radius: Node radius in pixels (default: 16).
-    #     :type node_radius: int
-    #     :return: Raw SVG XML.
-    #     :rtype: str
-    #     """
-    #     tree_height = self.height
-    #     scale = node_radius * 3
-    #     xml: Deque[str] = deque()
+        :param node_radius: Node radius in pixels (default: 16).
+        :type node_radius: int
+        :return: Raw SVG XML.
+        :rtype: str
+        """
+        tree_height = self.height
+        scale = node_radius * 3
+        xml: Deque[str] = deque()
 
-    #     def scale_x(x: int, y: int) -> float:
-    #         diff = tree_height - y
-    #         x = 2 ** (diff + 1) * x + 2**diff - 1
-    #         return 1 + node_radius + scale * x / 2
+        def scale_x(x: int, y: int) -> float:
+            diff = tree_height - y
+            x = 2 ** (diff + 1) * x + 2**diff - 1
+            return 1 + node_radius + scale * x / 2
 
-    #     def scale_y(y: int) -> float:
-    #         return scale * (1 + y)
+        def scale_y(y: int) -> float:
+            return scale * (1 + y)
 
-    #     def add_edge(parent_x: int, parent_y: int, node_x: int, node_y: int) -> None:
-    #         xml.appendleft(
-    #             '<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}"/>'.format(
-    #                 x1=scale_x(parent_x, parent_y),
-    #                 y1=scale_y(parent_y),
-    #                 x2=scale_x(node_x, node_y),
-    #                 y2=scale_y(node_y),
-    #             )
-    #         )
+        def add_edge(parent_x: int, parent_y: int, node_x: int, node_y: int) -> None:
+            xml.appendleft(
+                '<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}"/>'.format(
+                    x1=scale_x(parent_x, parent_y),
+                    y1=scale_y(parent_y),
+                    x2=scale_x(node_x, node_y),
+                    y2=scale_y(node_y),
+                )
+            )
 
-    #     def add_node(node_x: int, node_y: int, node_value: NodeValue) -> None:
-    #         x, y = scale_x(node_x, node_y), scale_y(node_y)
-    #         xml.append(f'<circle class="node" cx="{x}" cy="{y}" r="{node_radius}"/>')
-    #         xml.append(f'<text class="value" x="{x}" y="{y}">{node_value}</text>')
+        def add_node(node_x: int, node_y: int, node_value: NodeValue) -> None:
+            x, y = scale_x(node_x, node_y), scale_y(node_y)
+            xml.append(f'<circle class="node" cx="{x}" cy="{y}" r="{node_radius}"/>')
+            xml.append(f'<text class="value" x="{x}" y="{y}">{node_value}</text>')
 
-    #     current_nodes = [self.left, self.right]
-    #     has_more_nodes = True
-    #     y = 1
+        current_nodes = [self.left, self.right]
+        has_more_nodes = True
+        y = 1
 
-    #     add_node(0, 0, self.value)
+        add_node(0, 0, self.value)
 
-    #     while has_more_nodes:
+        while has_more_nodes:
 
-    #         has_more_nodes = False
-    #         next_nodes: List[Optional[Node]] = []
+            has_more_nodes = False
+            next_nodes: List[Optional[Node]] = []
 
-    #         for x, node in enumerate(current_nodes):
-    #             if node is None:
-    #                 next_nodes.append(None)
-    #                 next_nodes.append(None)
-    #             else:
-    #                 if node.left is not None or node.right is not None:
-    #                     has_more_nodes = True
+            for x, node in enumerate(current_nodes):
+                if node is None:
+                    next_nodes.append(None)
+                    next_nodes.append(None)
+                else:
+                    if node.left is not None or node.right is not None:
+                        has_more_nodes = True
 
-    #                 add_edge(x // 2, y - 1, x, y)
-    #                 add_node(x, y, node.value)
+                    add_edge(x // 2, y - 1, x, y)
+                    add_node(x, y, node.value)
 
-    #                 next_nodes.append(node.left)
-    #                 next_nodes.append(node.right)
+                    next_nodes.append(node.left)
+                    next_nodes.append(node.right)
 
-    #         current_nodes = next_nodes
-    #         y += 1
+            current_nodes = next_nodes
+            y += 1
 
-    #     return _SVG_XML_TEMPLATE.format(
-    #         width=scale * (2**tree_height),
-    #         height=scale * (2 + tree_height),
-    #         body="\n".join(xml),
-    #     )
+        return _SVG_XML_TEMPLATE.format(
+            width=scale * (2**tree_height),
+            height=scale * (2 + tree_height),
+            body="\n".join(xml),
+        )
 
-    # def graphviz(self, *args: Any, **kwargs: Any) -> Digraph:  # pragma: no cover
-    #     """Return a graphviz.Digraph_ object representing the binary tree.
+    def graphviz(self, *args: Any, **kwargs: Any) -> Digraph:  # pragma: no cover
+        """Return a graphviz.Digraph_ object representing the binary tree.
 
-    #     This method's positional and keyword arguments are passed directly into the
-    #     Digraph's **__init__** method.
+        This method's positional and keyword arguments are passed directly into the
+        Digraph's **__init__** method.
 
-    #     :return: graphviz.Digraph_ object representing the binary tree.
-    #     :raise binarytree.exceptions.GraphvizImportError: If graphviz is not installed
+        :return: graphviz.Digraph_ object representing the binary tree.
+        :raise binarytree.exceptions.GraphvizImportError: If graphviz is not installed
 
-    #     .. code-block:: python
+        .. code-block:: python
 
-    #         >>> from binarytree import tree
-    #         >>>
-    #         >>> t = tree()
-    #         >>>
-    #         >>> graph = t.graphviz()    # Generate a graphviz object
-    #         >>> graph.body              # Get the DOT body
-    #         >>> graph.render()          # Render the graph
+            >>> from binarytree import tree
+            >>>
+            >>> t = tree()
+            >>>
+            >>> graph = t.graphviz()    # Generate a graphviz object
+            >>> graph.body              # Get the DOT body
+            >>> graph.render()          # Render the graph
 
-    #     .. _graphviz.Digraph: https://graphviz.readthedocs.io/en/stable/api.html#digraph
-    #     """
-    #     if "node_attr" not in kwargs:
-    #         kwargs["node_attr"] = {
-    #             "shape": "record",
-    #             "style": "filled, rounded",
-    #             "color": "lightgray",
-    #             "fillcolor": "lightgray",
-    #             "fontcolor": "black",
-    #         }
-    #     digraph = Digraph(*args, **kwargs)
+        .. _graphviz.Digraph: https://graphviz.readthedocs.io/en/stable/api.html#digraph
+        """
+        if "node_attr" not in kwargs:
+            kwargs["node_attr"] = {
+                "shape": "record",
+                "style": "filled, rounded",
+                "color": "lightgray",
+                "fillcolor": "lightgray",
+                "fontcolor": "black",
+            }
+        digraph = Digraph(*args, **kwargs)
 
-    #     for node in self:
-    #         node_id = str(id(node))
+        for node in self:
+            node_id = str(id(node))
 
-    #         digraph.node(node_id, nohtml(f"<l>|<v> {node.value}|<r>"))
+            digraph.node(node_id, nohtml(f"<l>|<v> {node.value}|<r>"))
 
-    #         if node.left is not None:
-    #             digraph.edge(f"{node_id}:l", f"{id(node.left)}:v")
+            if node.left is not None:
+                digraph.edge(f"{node_id}:l", f"{id(node.left)}:v")
 
-    #         if node.right is not None:
-    #             digraph.edge(f"{node_id}:r", f"{id(node.right)}:v")
+            if node.right is not None:
+                digraph.edge(f"{node_id}:r", f"{id(node.right)}:v")
 
-    #     return digraph
+        return digraph
 
     def pprint(self, index: bool = False, delimiter: str = "-") -> None:
         """Pretty-print the binary tree.
@@ -687,7 +707,7 @@ def _build_tree_string(
         node_repr = "{}{}{}{}".format(curr_index, delimiter, root.val.get_state()[0],
                                      root.val.get_action)
     else:
-        node_repr = f'{str(root.val.get_state()[0])}, {str(root.val.get_action())}'
+        node_repr = f'{str(round(root.val.get_state()[0], 2))}, {str(root.val.get_action())}'
 
     new_root_width = gap_size = len(node_repr)
 
@@ -702,7 +722,7 @@ def _build_tree_string(
     if l_box_width > 0:
         l_root = (l_root_start + l_root_end) // 2 + 1
         line1.append(" " * (l_root + 1))
-        line1.append("_" * (l_box_width - l_root))
+        line1.append("_" * (l_box_width - l_root))   ##
         line2.append(" " * l_root + "/")
         line2.append(" " * (l_box_width - l_root))
         new_root_start = l_box_width + 1
