@@ -198,7 +198,7 @@ def optimization(X_nn, t_nn, dt, model, type):
     reduced = filter(constraint, grid)  # apply filter to reduce the space
     opt_x = min(reduced, key=objective)  # find 3-uple corresponding to min objective func.
 
-    p = X_nn[-1, :]
+    p = X_nn[-1, :].tolist()[0]
 
     if type == 1:  # p_i corresponds to which type you are
         p_i = 1 - p
@@ -252,7 +252,7 @@ if __name__ == '__main__':
     logging_root = './logs'
 
     # Setting to plot
-    ckpt_path = '../logs/random_p_test_revisit/checkpoints/model_final.pth'
+    ckpt_path = './model_final.pth'
     # ckpt_path = '../experiment_scripts/logs/4d_picnn_min_hji/checkpoints/model_final.pth'
     activation = 'tanh'
 
