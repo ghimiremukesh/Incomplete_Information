@@ -52,7 +52,7 @@ class Node:
         self.right = right
     
     def __repr__(self) -> str:
-        return "State({}), Action({})".format(self.val.get_state(), self.val.get_action())
+        return "State({}), Action({}), Belief({})".format(self.val.get_state(), self.val.get_action(), self.val.get_belief())
 
     def __str__(self) -> str:
         lines = _build_tree_string(self, 0, False, "-")[0]
@@ -707,7 +707,7 @@ def _build_tree_string(
         node_repr = "{}{}{}{}".format(curr_index, delimiter, root.val.get_state()[0],
                                      root.val.get_action)
     else:
-        node_repr = f'{str(round(root.val.get_state()[0], 2))}, {str(root.val.get_action())}'
+        node_repr = f'{str(round(root.val.get_state()[0], 2))}, {str(root.val.get_action())}, {str(root.val.get_belief())}'
 
     new_root_width = gap_size = len(node_repr)
 
