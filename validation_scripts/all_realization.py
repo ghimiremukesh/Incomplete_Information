@@ -164,7 +164,7 @@ def optimization(X_nn, t_nn, dt, model, type):
         # loss = V(t_k) - \sum lambda_i * V(t_k+1, p_i)
         loss = V - (lam_1 * V1 + lam_2 * V2)
 
-        return loss
+        return abs(loss)
 
     def objective(var):
         lam_1 = var[0]
@@ -196,7 +196,7 @@ def optimization(X_nn, t_nn, dt, model, type):
     # 1-D grid search for lambda, p1, p2
     grid = product(search_space, repeat=3)  # make a grid
     reduced = filter(constraint, grid)  # apply filter to reduce the space
-    opt_x = min(reduced, key=objective)  # find 3-uple corresponding to min objective func.
+    opt_x = min(reduced, key=objective_v)  # find 3-uple corresponding to min objective func.
 
     p = X_nn[-1, :]
 
@@ -247,12 +247,85 @@ def optimization(X_nn, t_nn, dt, model, type):
     return U, D, P_t
 
 
+def helper(root, arr, ans):
+    if not root:
+        return
+
+    arr.append(root.val.x[0])
+
+    if root.left is None and root.right is None:
+        # This will be only true when the node is leaf node
+        # and hence we will update our ans array by inserting
+        # array arr which have one unique path from root to leaf
+        ans.append(arr.copy())
+        del arr[-1]
+        # after that we will return since we don't want to check after leaf node
+        return
+
+    # recursively going left and right until we find the leaf and updating the arr
+    # and ans array simultaneously
+    helper(root.left, arr, ans)
+    helper(root.right, arr, ans)
+    del arr[-1]
+
+
+def Paths(root):
+    # creating answer in which each element is a array
+    # having one unique path from root to leaf
+    ans = []
+    # if root is null then there is no further action require so return
+    if not root:
+        return [[]]
+    arr = []
+    # arr is a array which will have one unique path from root to leaf
+    # at a time.arr will be updated recursively
+    helper(root, arr, ans)
+    # after helper function call our ans array updated with paths so we will return ans array
+    return ans
+
+# def getStates(root):
+#     # list to store path
+#     path = []
+#     statearray = []
+#     return get_all_states(root, path, 0)
+#
+# def get_all_states(root, path, pathLen):
+#     # Base condition - if binary tree is
+#     # empty return
+#     statesall = []
+#     if root is None:
+#         return
+#
+#     # add current root's data into
+#     # path_ar list
+#
+#     # if length of list is gre
+#     if (len(path) > pathLen):
+#         path[pathLen] = root.val.x[0]
+#     else:
+#         path.append(root.val.x[0])
+#
+#     # increment pathLen by 1
+#     pathLen = pathLen + 1
+#
+#     if root.left is None and root.right is None:
+#
+#         # leaf node then print the list
+#         print(path)
+#         statesall.append(path)
+#         # return np.array(path)
+#     else:
+#         # try for left and right subtree
+#         get_all_states(root.left, path, pathLen)
+#         get_all_states(root.right, path, pathLen)
+
+
 if __name__ == '__main__':
 
     logging_root = './logs'
 
     # Setting to plot
-    ckpt_path = '../logs/random_p_test_revisit/checkpoints/model_final.pth'
+    ckpt_path = '../logs/from_cluster/30k/model_final.pth'
     # ckpt_path = '../experiment_scripts/logs/4d_picnn_min_hji/checkpoints/model_final.pth'
     activation = 'tanh'
 
@@ -280,12 +353,12 @@ if __name__ == '__main__':
     for i in range(num_games):
         num_physical = 2
         x0 = torch.zeros(1, num_physical).uniform_(-1, 1)
-        x0[:, 0] = 0.1  # put them in the center
+        x0[:, 0] = 0  # put them in the center
         x0[:, 1] = 0
 
         # probability selections and calculations
         p_dist = np.random.rand()
-        p_dist = 0.8  # for debugging
+        p_dist = 0.5  # for debugging
         p_dist = [p_dist, 1 - p_dist]
         types = [0, 1]
         type_i = np.random.choice(types, p=p_dist)  # nature selection from dist
@@ -294,7 +367,7 @@ if __name__ == '__main__':
 
         X0 = np.vstack((x0.T, p_0))
 
-        N = 5
+        N = 10
         Time = np.linspace(0, 1, num=N)
         dt = Time[1] - Time[0]
         Time = np.flip(Time)
@@ -350,9 +423,10 @@ if __name__ == '__main__':
             dxdv = np.array([dx, dv]).flatten().tolist()
             current.right = Node(State(dxdv, u[1], p_t[1]))
 
+        print(type_i)
         print(root)
 
-
+        
         time_spend = time.time() - start_time
         print('Total solution time: %1.1f' % (time_spend), 'sec')
 
@@ -369,6 +443,48 @@ if __name__ == '__main__':
 
         save_data = 0  # input('Save data? Enter 0 for no, 1 for yes:')
 
+        allstates = Paths(root)
+        fig1, ax1 = plt.subplots()
+        ax1.set_xlabel('Time-Steps')
+        ax1.set_ylabel('Attacker\'s Position')
+        for each in allstates:
+            ax1.plot(each)
+
+
+        plt.show()
+
         if save_data:
             save_path = f'relative_random_{i}.mat'
             scio.savemat(save_path, data)
+
+    # plot the trajectory for all realizations
+    # required vars: loop_index
+    # states = np.zeros((30, N))
+    # initial_state = root.val.x
+    # states.append(initial_state[0])
+    # current = root
+    # # root
+    # states[:, 0] = initial_state[0]  # initial state is same for all realizations
+    # # branch 1
+    # states[:15, 1] = root.left.val.x[0]  # set next state for first left child
+    # states[15:, 1] = root.right.val.x[0]  # set next state for first right child
+    #
+    # # start adding for the left side of the tree
+    # current = root.left
+    # states[:7, 2] = current.left.val.x[0]  # set next state for second left child
+    # states[7:15, 2] = current.right.val.x[0] # set next state for second right child
+
+    #
+    # while current.left is not None:
+
+
+
+
+
+
+
+
+
+
+
+
