@@ -80,6 +80,65 @@ def initialize_soccer_incomplete(dataset):
 
     return soccer_incomplete
 
+def initialize_soccer_discrete(dataset):
+    def soccer_discrete(model, model_output, gt):
+
+        source_boundary_values = gt['source_boundary_values']
+        x = model_output['model_in']
+        # output of the value network V(t, x, p)
+        y = model_output['model_out']  # (meta_batch_size, num_points, 1)
+        dirichlet_mask = gt['dirichlet_mask']
+
+        # action candidates
+        u_c = torch.tensor([-dataset.uMax, dataset.uMax])
+        d_c = torch.tensor([-dataset.dMax, dataset.dMax])
+        V_next = torch.zeros(dataset.numpoints, 2, 2)
+        tau = 1e-3  # time step
+        x_next = torch.clone(x)
+
+        # for i in range(len(u_c)):
+        #     for j in range(len(d_c)):
+        #         H[:, i, j] = lam_da * v1 + lam_va * u_c[i] + lam_dd * v2 + lam_dv * d_c[j]
+        for i in range(len(u_c)):
+            for j in range(len(d_c)):
+                # get the next state
+                v = x_next[..., 2] + (u_c[i] - d_c[j]) * tau
+                d = x_next[..., 1] + v * tau
+                x_next[..., 1] = d
+                x_next[..., 2] = v
+                x_next[..., 0] = x_next[..., 0] + tau
+                next_in = {'coords': x_next}
+                V_next[:, i, j] = model(next_in)['model_out'].squeeze()
+
+        u = torch.zeros(dataset.numpoints)
+        d = torch.zeros(dataset.numpoints)
+
+        # array to store actual next value
+        v_next_true = torch.zeros(dataset.numpoints)
+        # pick action based on max_u min_d H
+        for i in range(dataset.numpoints):
+            d_index = torch.argmax(V_next[i, :, :], dim=1)[1]
+            u_index = torch.argmin(V_next[i, :, d_index])
+            u[i] = u_c[u_index]
+            d[i] = d_c[d_index]
+            v_next_true[i] = V_next[i, u_index, d_index]   # this is the true value of the next state from minmax
+
+        if torch.all(dirichlet_mask):
+            diff_constraint_hom = torch.Tensor([0])
+        else:
+            # check the value difference
+            diff_constraint_hom = y - v_next_true.reshape(-1, 1)
+
+        # boundary condition check
+        dirichlet = y[dirichlet_mask] - source_boundary_values[dirichlet_mask]
+
+        # A factor of (2e5, 100) to make loss roughly equal
+        return {'dirichlet': torch.abs(dirichlet).sum() / 150,  # 1e4
+                'diff_constraint_hom': torch.abs(diff_constraint_hom).sum()}
+
+
+
+    return soccer_discrete
 
 def initialize_soccer_hji(dataset):
     def soccer_hji(model_output, gt):
@@ -179,3 +238,5 @@ def initialize_soccer_hji(dataset):
                 'diff_constraint_hom': torch.abs(diff_constraint_hom).sum() / 40}
 
     return soccer_hji
+
+
