@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 
 def get_abs_states(u1, u2):
-    x_e = [np.array([0, 0])]  # both start at (0, 0) x_e is attacker
+    x_e = [np.array([0.1, 0])]  # both start at (0, 0) x_e is attacker
     x_p = [np.array([0, 0])]
     N = len(u1)
     dt = 1/N
@@ -26,11 +26,14 @@ def get_abs_states(u1, u2):
     x_p = np.asarray(x_p)
 
     return x_e, x_p
-fig, ax = plt.subplots(nrows=5, ncols=1, sharex=True)
+fig1, ax1 = plt.subplots(nrows=5, ncols=1, sharex=True) # for right
+fig2, ax2 = plt.subplots(nrows=5, ncols=1, sharex=True) # for left
+
 count_1 = 0
 count_2 = 0
-for i in range(10):
-    file = f'relative_random_{i}.mat'
+for i in range(1):
+    file = f'discrete_value_{i}.mat'
+    # file = f'relative_0.2.mat'
     data = scipy.io.loadmat(file)
 
     d = data['d'].squeeze()
@@ -52,18 +55,35 @@ for i in range(10):
 
     d1 = d1[:, 0]
     d2 = d2[:, 0]
-    ax[0].plot(t, d1, label=f'Type: {type}')
-    ax[0].set_ylabel('Attacker')
-    ax[0].legend(loc='upper right')
-    ax[1].plot(t, d2)
-    ax[1].set_ylabel('Defender')
-    ax[2].plot(t, p)
-    ax[2].set_ylabel('Belief')
-    ax[3].plot(t, u1)
-    ax[3].set_ylabel('$u_A$')
-    ax[4].plot(t, u2)
-    ax[4].set_ylabel('$u_D$')
-    ax[4].set_xlabel('Time')
+    if type == 0:
+        ax1[0].plot(t, d1, label=f'{type}')
+        ax1[0].set_ylabel('Attacker')
+        # ax1[0].legend(loc='upper right', bbox_to_anchor=(1.13, 1.1))
+        ax1[1].plot(t, d2)
+        ax1[1].set_ylabel('Defender')
+        ax1[2].plot(t, p)
+        ax1[2].set_ylabel('Belief')
+        ax1[3].plot(t, u1)
+        ax1[3].set_ylabel('$u_A$')
+        ax1[4].plot(t, u2)
+        ax1[4].set_ylabel('$u_D$')
+        ax1[4].set_xlabel('Time')
+        ax1[0].set_title('Trajectory for Type Right')
+    else:
+        ax2[0].plot(t, d1, label=f'{type}')
+        ax2[0].set_ylabel('Attacker')
+        # ax2[0].legend(loc='upper right', bbox_to_anchor=(1.13, 1.1))
+        ax2[1].plot(t, d2)
+        ax2[1].set_ylabel('Defender')
+        ax2[2].plot(t, p)
+        ax2[2].set_ylabel('Belief')
+        ax2[3].plot(t, u1)
+        ax2[3].set_ylabel('$u_A$')
+        ax2[4].plot(t, u2)
+        ax2[4].set_ylabel('$u_D$')
+        ax2[4].set_xlabel('Time')
+        ax2[0].set_title('Trajectory for Type Left')
+
 
     # fig2, ax2= plt.subplots(1, 1)
     # ax2.plot(d1, d2)
