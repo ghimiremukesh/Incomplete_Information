@@ -1,3 +1,5 @@
+import copy
+
 import torch
 import diff_operators
 
@@ -94,34 +96,38 @@ def initialize_soccer_discrete(dataset):
         d_c = torch.tensor([-dataset.dMax, dataset.dMax])
         V_next = torch.zeros(dataset.numpoints, 2, 2)
         tau = 1e-3  # time step
-        x_next = torch.clone(x)
 
-        # for i in range(len(u_c)):
-        #     for j in range(len(d_c)):
-        #         H[:, i, j] = lam_da * v1 + lam_va * u_c[i] + lam_dd * v2 + lam_dv * d_c[j]
+        x_next = [copy.deepcopy(x) for _ in range(len(u_c)) for _ in range(len(d_c))]
+        # x_next = [torch.clone(x) for _ in range(len(u_c)) for j in range(len(d_c))]
+        # v = [x_next[i][..., 2] + u_c[i]]
+
+        count = 0  # brute force, try something later
         for i in range(len(u_c)):
             for j in range(len(d_c)):
                 # get the next state
-                v = x_next[..., 2] + (u_c[i] - d_c[j]) * tau
-                d = x_next[..., 1] + v * tau
-                x_next[..., 1] = d
-                x_next[..., 2] = v
-                x_next[..., 0] = x_next[..., 0] + tau
-                next_in = {'coords': x_next}
+                v = x_next[count][..., 2] + (u_c[i] - d_c[j]) * tau
+                d = x_next[count][..., 1] + v * tau
+                with torch.no_grad():
+                    x_next[count][..., 1] = d
+                    x_next[count][..., 2] = v
+                    x_next[count][..., 0] = x_next[count][..., 0] + tau
+                next_in = {'coords': x_next[count]}
                 V_next[:, i, j] = model(next_in)['model_out'].squeeze()
-
-        u = torch.zeros(dataset.numpoints)
-        d = torch.zeros(dataset.numpoints)
+                count += 1
 
         # array to store actual next value
-        v_next_true = torch.zeros(dataset.numpoints)
-        # pick action based on max_u min_d H
-        for i in range(dataset.numpoints):
-            d_index = torch.argmax(V_next[i, :, :], dim=1)[1]
-            u_index = torch.argmin(V_next[i, :, d_index])
-            u[i] = u_c[u_index]
-            d[i] = d_c[d_index]
-            v_next_true[i] = V_next[i, u_index, d_index]   # this is the true value of the next state from minmax
+        # pick action based on max_u min_d V
+        d_indices = torch.argmax(V_next, dim=2)[:, 1]
+        u_indices = torch.argmin(V_next, dim=1)[:, 1]
+        v_next_true = torch.diag(V_next[:, u_indices, d_indices])
+
+        # remove for-loop replaced by above : keep for future debugging
+        # for i in range(dataset.numpoints):
+        #     d_index = torch.argmax(V_next[i, :, :], dim=1)[1]
+        #     u_index = torch.argmin(V_next[i, :, d_index])
+        #     u[i] = u_c[u_index]
+        #     d[i] = d_c[d_index]
+        #     v_next_true[i] = V_next[i, u_index, d_index]   # this is the true value of the next state from minmax
 
         if torch.all(dirichlet_mask):
             diff_constraint_hom = torch.Tensor([0])
