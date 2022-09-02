@@ -47,7 +47,7 @@ class SoccerIncomplete(Dataset):
         p_t = torch.zeros(self.numpoints, 1).uniform_(0, 1)
 
         coords = torch.cat((pos, p_t), dim=1)
-
+        tau = 0
 
         if self.pretrain:
             # only sample in time around initial condition
@@ -57,10 +57,13 @@ class SoccerIncomplete(Dataset):
             # slowly grow time
             time = self.tMin + torch.zeros(self.numpoints, 1).uniform_(0, (self.tMax - self.tMin) *
                                                                        (self.counter / self.full_count))
+
+            tau =  ((self.tMax - self.tMin) * (self.counter / (0.5*self.full_count)))/1e3 if self.tMax < 0.5 else 1e-3
+
             coords = torch.cat((time, coords), dim=1)
 
             # make sure we have training samples at the initial time
-            coords[-self.N_src_samples:, 0] = start_time
+            coords[-self.N_src_samples:, 0] = start_time  # remove final T after boundary training.
 
         # if t==1 velocities must also be 0, inverted time, t=1 is initial time
         for i in range(len(coords)):
@@ -93,7 +96,8 @@ class SoccerIncomplete(Dataset):
             self.pretrain = False
 
         return {'coords': coords}, {'source_boundary_values': boundary_values,
-                                    'dirichlet_mask': dirichlet_mask}
+                                    'dirichlet_mask': dirichlet_mask,
+                                    'tau': tau}
 
 
 class SoccerHJI(Dataset):
