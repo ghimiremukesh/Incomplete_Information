@@ -95,7 +95,7 @@ def initialize_soccer_discrete(dataset):
         u_c = torch.tensor([-dataset.uMax, dataset.uMax])
         d_c = torch.tensor([-dataset.dMax, dataset.dMax])
         V_next = torch.zeros(dataset.numpoints, 2, 2)
-        tau = 1e-3  # time step
+        tau = gt['tau']  # time step
 
         x_next = [copy.deepcopy(x) for _ in range(len(u_c)) for _ in range(len(d_c))]
         # x_next = [torch.clone(x) for _ in range(len(u_c)) for j in range(len(d_c))]
@@ -110,7 +110,7 @@ def initialize_soccer_discrete(dataset):
                 with torch.no_grad():
                     x_next[count][..., 1] = d
                     x_next[count][..., 2] = v
-                    x_next[count][..., 0] = x_next[count][..., 0] + tau
+                    x_next[count][..., 0] = x_next[count][..., 0] - tau
                 next_in = {'coords': x_next[count]}
                 V_next[:, i, j] = model(next_in)['model_out'].squeeze()
                 count += 1
@@ -119,7 +119,11 @@ def initialize_soccer_discrete(dataset):
         # pick action based on max_u min_d V
         d_indices = torch.argmax(V_next, dim=2)[:, 1]
         u_indices = torch.argmin(V_next, dim=1)[:, 1]
-        v_next_true = torch.diag(V_next[:, u_indices, d_indices])
+        v_next_true = torch.diag(V_next[:, u_indices, d_indices]).to(device)
+
+        # u = torch.zeros(dataset.numpoints)
+        # d = torch.zeros(dataset.numpoints)
+        # V_next_true = torch.zeros(dataset.numpoints)
 
         # remove for-loop replaced by above : keep for future debugging
         # for i in range(dataset.numpoints):
@@ -127,13 +131,13 @@ def initialize_soccer_discrete(dataset):
         #     u_index = torch.argmin(V_next[i, :, d_index])
         #     u[i] = u_c[u_index]
         #     d[i] = d_c[d_index]
-        #     v_next_true[i] = V_next[i, u_index, d_index]   # this is the true value of the next state from minmax
+        #     V_next_true[i] = V_next[i, u_index, d_index]   # this is the true value of the next state from minmax
 
         if torch.all(dirichlet_mask):
             diff_constraint_hom = torch.Tensor([0])
         else:
-            # check the value difference
-            diff_constraint_hom = y - v_next_true.reshape(-1, 1)
+            # check the value difference # for times other than terminal time
+            diff_constraint_hom = y[~dirichlet_mask] - v_next_true.reshape(1, -1, 1)[~dirichlet_mask]
 
         # boundary condition check
         dirichlet = y[dirichlet_mask] - source_boundary_values[dirichlet_mask]
@@ -141,8 +145,6 @@ def initialize_soccer_discrete(dataset):
         # A factor of (2e5, 100) to make loss roughly equal
         return {'dirichlet': torch.abs(dirichlet).sum() / 150,  # 1e4
                 'diff_constraint_hom': torch.abs(diff_constraint_hom).sum()}
-
-
 
     return soccer_discrete
 
