@@ -140,7 +140,3 @@ plt.xlabel('p')
 plt.ylabel('V')
 plt.title("Value at T0")
 plt.show()
-
-
-
-
