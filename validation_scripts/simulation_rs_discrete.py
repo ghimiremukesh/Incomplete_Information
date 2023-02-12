@@ -51,8 +51,8 @@ def value_action(X_nn, t_nn, model):
             next_in = {'coords': x_next}
             V_next[i, j] = model(next_in)['model_out'].squeeze()
 
-    d_index = torch.argmax(V_next[:, :], dim=1)[1]
-    u_index = torch.argmin(V_next[:, d_index])
+    d_index = np.unravel_index(torch.argmax(torch.amin(V_next, dim=1)), V_next.shape)[1]
+    u_index = torch.argmax(torch.amin(V_next, dim=1))
     u = u_c[u_index]
     d = d_c[d_index]
 
@@ -106,8 +106,8 @@ def optimization(X_nn, t_nn, dt, model, type):
                 V_next[i, j] = model(next_in)['model_out'].squeeze()
                 count += 1
 
-        d_index = torch.argmax(V_next[:, :], dim=1)[1]
-        u_index = torch.argmin(V_next[:, d_index])
+        d_index = np.unravel_index(torch.argmax(torch.amin(V_next, dim=1)), V_next.shape)[1]
+        u_index = torch.argmax(torch.amin(V_next, dim=1))
         u = u_c[u_index]
         d = d_c[d_index]
         v_next_1 = V_next[u_index, d_index]
@@ -131,8 +131,8 @@ def optimization(X_nn, t_nn, dt, model, type):
                 V_next_2[i, j] = model(next_in)['model_out'].squeeze()
                 count += 1
 
-        d_index = torch.argmax(V_next_2[:, :], dim=1)[1]
-        u_index = torch.argmin(V_next_2[:, d_index])
+        d_index = np.unravel_index(torch.argmax(torch.amin(V_next, dim=1)), V_next.shape)[1]
+        u_index = torch.argmax(torch.amin(V_next, dim=1))
         u = u_c[u_index]
         d = d_c[d_index]
         v_next_2 = V_next_2[u_index, d_index]

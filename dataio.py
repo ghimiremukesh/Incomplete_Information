@@ -57,7 +57,6 @@ class SoccerIncomplete(Dataset):
             # slowly grow time
             time = self.tMin + torch.zeros(self.numpoints, 1).uniform_(0, (self.tMax - self.tMin) *
                                                                        (self.counter / self.full_count))
-
             tau =  ((self.tMax - self.tMin) * (self.counter / (0.5*self.full_count)))/1e3 if self.tMax < 0.5 else 1e-3
 
             coords = torch.cat((time, coords), dim=1)

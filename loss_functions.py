@@ -2,6 +2,7 @@ import copy
 
 import torch
 import diff_operators
+import numpy as np
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -117,9 +118,14 @@ def initialize_soccer_discrete(dataset):
 
         # array to store actual next value
         # pick action based on max_u min_d V
-        d_indices = torch.argmax(V_next, dim=2)[:, 1]
-        u_indices = torch.argmin(V_next, dim=1)[:, 1]
-        v_next_true = torch.diag(V_next[:, u_indices, d_indices]).to(device)
+        # this is only for player 1 at the moment
+        u_indices = torch.argmax(torch.amin(V_next, dim=2, keepdim=True), dim=1)
+        d_indices = np.unravel_index(torch.argmin(torch.amax(V_next, dim=2, keepdim=True), dim=2), V_next.shape[0])[0][:, 0]
+        # d_indices = np.unravel_index(torch.argmax(torch.amin(V_next, dim=2, keepdim=True)))
+        # d_indices = torch.argmax(torch.amin(V_next, dim=2, keepdim=True), dim=2)[1]
+        # d_indices = torch.argmax(V_next, dim=2)[:, 1]
+        # u_indices = torch.argmin(V_next, dim=1)[:, 1]
+        v_next_true = torch.diag(V_next[:, u_indices.flatten(), d_indices.flatten()]).to(device)
 
         # u = torch.zeros(dataset.numpoints)
         # d = torch.zeros(dataset.numpoints)
