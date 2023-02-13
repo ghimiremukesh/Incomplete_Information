@@ -18,7 +18,7 @@ def initialize_soccer_incomplete(dataset):
 
         # calculate the partial gradient w.r.t. state (not p)
         jac, _ = diff_operators.jacobian(y, x)
-        dvdx = jac[..., 0, 1:-1].squeeze() # exclude the last one
+        dvdx = jac[..., 0, 1:-1].squeeze()  # exclude the last one
         dvdt = jac[..., 0, 0].squeeze()
 
         # calculate hessian only with respect to p
@@ -78,10 +78,11 @@ def initialize_soccer_incomplete(dataset):
         dirichlet = y[dirichlet_mask] - source_boundary_values[dirichlet_mask]
 
         # A factor of (2e5, 100) to make loss roughly equal
-        return {'dirichlet': torch.abs(dirichlet).sum()/6,  # 1e4
+        return {'dirichlet': torch.abs(dirichlet).sum() / 6,  # 1e4
                 'diff_constraint_hom': torch.abs(diff_constraint_hom).sum()}
 
     return soccer_incomplete
+
 
 def initialize_soccer_discrete(dataset):
     def soccer_discrete(model, model_output, gt):
@@ -95,7 +96,8 @@ def initialize_soccer_discrete(dataset):
         # action candidates
         u_c = torch.tensor([-dataset.uMax, dataset.uMax])
         d_c = torch.tensor([-dataset.dMax, dataset.dMax])
-        V_next = torch.zeros(dataset.numpoints, 2, 2)
+        # V_next = torch.zeros(dataset.numpoints, 2, 2)
+        V_next = np.zeros((dataset.numpoints, 2, 2))
         tau = gt['tau']  # time step
 
         x_next = [copy.deepcopy(x) for _ in range(len(u_c)) for _ in range(len(d_c))]
@@ -113,19 +115,26 @@ def initialize_soccer_discrete(dataset):
                     x_next[count][..., 2] = v
                     x_next[count][..., 0] = x_next[count][..., 0] - tau
                 next_in = {'coords': x_next[count]}
-                V_next[:, i, j] = model(next_in)['model_out'].squeeze()
+                V_next[:, i, j] = model(next_in)['model_out'].cpu().detach().numpy().squeeze()
                 count += 1
 
         # array to store actual next value
         # pick action based on max_u min_d V
         # this is only for player 1 at the moment
-        u_indices = torch.argmax(torch.amin(V_next, dim=2, keepdim=True), dim=1)
-        d_indices = np.unravel_index(torch.argmin(torch.amax(V_next, dim=2, keepdim=True), dim=2), V_next.shape[0])[0][:, 0]
+        # u_indices = torch.argmax(torch.amin(V_next, dim=2, keepdim=True), dim=1)
+        # d_indices = np.unravel_index(torch.argmin(torch.amax(V_next, dim=2, keepdim=True), dim=2), V_next.shape[0])[0][:, 0]
+        u_indices = np.argmax(np.min(V_next, axis=2, keepdims=True), axis=1).flatten()
+        d_indices = np.argmin(np.max(V_next, axis=1, keepdims=True), axis=2).flatten()
         # d_indices = np.unravel_index(torch.argmax(torch.amin(V_next, dim=2, keepdim=True)))
         # d_indices = torch.argmax(torch.amin(V_next, dim=2, keepdim=True), dim=2)[1]
         # d_indices = torch.argmax(V_next, dim=2)[:, 1]
         # u_indices = torch.argmin(V_next, dim=1)[:, 1]
-        v_next_true = torch.diag(V_next[:, u_indices.flatten(), d_indices.flatten()]).to(device)
+
+        v_next_true = [V_next[i, u_indices[i], d_indices[i]] for i in range(len(V_next))]
+        v_next_true = torch.as_tensor(v_next_true).flatten().to(device)
+        # v_next_true = torch.as_tensor(np.diag(V_next[:, u_indices.flatten(),
+        #                                       d_indices.flatten()].reshape(-1, 1))).to(device)
+        # v_next_true = torch.diag(V_next[:, u_indices.flatten(), d_indices.flatten()]).to(device)
 
         # u = torch.zeros(dataset.numpoints)
         # d = torch.zeros(dataset.numpoints)
@@ -153,6 +162,7 @@ def initialize_soccer_discrete(dataset):
                 'diff_constraint_hom': torch.abs(diff_constraint_hom).sum()}
 
     return soccer_discrete
+
 
 def initialize_soccer_hji(dataset):
     def soccer_hji(model_output, gt):
@@ -252,5 +262,3 @@ def initialize_soccer_hji(dataset):
                 'diff_constraint_hom': torch.abs(diff_constraint_hom).sum() / 40}
 
     return soccer_hji
-
-
