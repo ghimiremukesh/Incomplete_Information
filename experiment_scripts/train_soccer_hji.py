@@ -84,7 +84,8 @@ model = modules_picnn.SingleBVPNet(in_features=4, out_features=1, type=opt.model
 
 model.to(device)
 
-loss_fn = loss_functions.initialize_soccer_discrete(dataset)
+# loss_fn = loss_functions.initialize_soccer_discrete(dataset)
+loss_fn = loss_functions.initialize_soccer_incomplete(dataset)
 
 root_path = os.path.join(opt.logging_root, opt.experiment_name)
 
