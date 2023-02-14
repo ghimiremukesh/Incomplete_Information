@@ -93,7 +93,9 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
                     optim.step(closure)
 
                 model_output = model(model_input)
-                losses = loss_fn(model, model_output, gt)  # for discrete case
+                # losses = loss_fn(model, model_output, gt)  # for discrete case
+                losses = loss_fn(model_output, gt)  # for discrete case
+
 
                 # import ipdb; ipdb.set_trace()
 
