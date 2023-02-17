@@ -42,6 +42,9 @@ class SoccerIncomplete(Dataset):
         start_time = 0.
         # pos = torch.zeros(self.numpoints, 4).uniform_(-1, 1) # states
         pos = torch.zeros(self.numpoints, 2).uniform_(-1, 1) # dx and dv
+        # pos = torch.zeros(self.numpoints, 1).uniform_(-4, 4)
+        # vel = torch.zeros(self.numpoints, 1).uniform_(-1, 1)
+        # pos = torch.cat((pos, vel), dim=1)
         # self.p = torch.zeros(1).uniform_(0, 1)
         # random process p_t = p_0
         p_t = torch.zeros(self.numpoints, 1).uniform_(0, 1)
@@ -78,7 +81,10 @@ class SoccerIncomplete(Dataset):
         # boundary_values = (torch.mul(p, (coords[:, 1] - coords[:, 3]).reshape(-1,1)) + torch.mul((torch.ones_like(p) - p), (coords[:, 3] - coords[:, 1]).reshape(-1,1))).reshape(-1,1)
 
         # for relative coordinates V(T, ., .) = p(del_x) - (1-p) (del_x)  # try with
-        boundary_values = -1 * ((coords[:, -1] * coords[:, 1]) - (1 - coords[:, -1]) * coords[:, 1]).reshape(-1, 1)
+        # boundary_values = -1 * ((coords[:, -1] * coords[:, 1]) - (1 - coords[:, -1]) * coords[:, 1]).reshape(-1, 1)
+
+        # boundary values V(T, ., .) =  (2p-1) * del_x
+        boundary_values = ((2 * coords[:, -1] - 1) * coords[:, 1]).reshape(-1, 1)
 
         if self.pretrain:
             dirichlet_mask = torch.ones(coords.shape[0], 1) > 0

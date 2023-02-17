@@ -18,11 +18,13 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
           validation_fn=None, start_epoch=0):
 
     optim = torch.optim.Adam(lr=lr, params=model.parameters())
+    # optim = torch.optim.LBFGS(lr=lr, params=model.parameters())
+
 
     # copy settings from Raissi et al. (2019) and here
     # https://github.com/maziarraissi/PINNs
     if use_lbfgs:
-        optim = torch.optim.LBFGS(lr=lr, params=model.parameters(), max_iter=50000, max_eval=50000,
+        optim = torch.optim.LBFGS(lr=lr, params=model.parameters(), max_iter=500, max_eval=500,
                                   history_size=50, line_search_fn='strong_wolfe')
 
     # Load the checkpoint if required
@@ -129,6 +131,8 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
                             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_grad)
 
                     optim.step()
+
+                    # uncomment if using convex nn
                     model.convexify()
 
                     parm = {}

@@ -21,78 +21,48 @@ def initialize_soccer_incomplete(dataset):
         dvdx = jac[..., 0, 1:-1].squeeze()  # exclude the last one
         dvdt = jac[..., 0, 0].squeeze()
 
-        # calculate hessian only with respect to p
-        # hess, _ = diff_operators.hessian(y, x)
-        # d2vdp = hess[..., -1, -1].squeeze()
+        lam_d = dvdx[:, :1].detach().cpu().numpy()
+        lam_v = dvdx[:, -1:].detach().cpu().numpy()
 
-        # co-states for hamiltonian H = argmax_u argmin_d = <\lambda, f>
-        # lam_da = dvdx[:, :1].squeeze()
-        # lam_va = dvdx[:, 1:2].squeeze()
-        # lam_dd = dvdx[:, 2:3].squeeze()
-        # lam_dv = dvdx[:, 3:4].squeeze()
+        del_v = x[:, :, 2].squeeze()
 
-        # co-states with relative coordinates
-        lam_d = dvdx[:, :1].cpu().detach().numpy().squeeze()
-        lam_v = dvdx[:, -1:].cpu().detach().numpy().squeeze()
 
-        # v1 = x[:, :, 2].squeeze()
-        # v2 = x[:, :, 4].squeeze()
+        u = np.sign(lam_v) * dataset.uMax  # bang bang control
+        d = np.sign(lam_d) * dataset.dMax  # bang bang control (min H * -1)
 
-        del_v = x[:, :, 2].cpu().detach().numpy().squeeze()
+        u = torch.as_tensor(u).squeeze().to(device)
+        d = torch.as_tensor(d).squeeze().to(device)
+        lam_d = torch.as_tensor(lam_d).squeeze().to(device)
+        lam_v = torch.as_tensor(lam_v).squeeze().to(device)
 
-        # action candidates
-        u_c = [-dataset.uMax, dataset.uMax]
-        d_c = [-dataset.dMax, dataset.dMax]
-        H = np.zeros((dataset.numpoints, 2, 2))
-
-        # for i in range(len(u_c)):
-        #     for j in range(len(d_c)):
-        #         H[:, i, j] = lam_da * v1 + lam_va * u_c[i] + lam_dd * v2 + lam_dv * d_c[j]
-        # with torch.no_grad():
-        #     h = lambda u, d, lam_d, lam_v: lam_d * del_v + lam_v * (u - d)
-        #     H = map()
-        #     H = [lam_d * del_v + lam_v * (u_c[i] - d_c[j]) for i in range(len(u_c)) for j in range(len(d_c))]
-        for i in range(len(u_c)):
-            for j in range(len(d_c)):
-                H[:, i, j] = lam_d * del_v + lam_v * (u_c[i] - d_c[j])
-
-        # u = torch.zeros(dataset.numpoints)
-        # d = torch.zeros(dataset.numpoints)
-        # pick action based on max_u min_d H
-        u_indices = np.argmax(np.min(H, axis=2, keepdims=True), axis=1).flatten()
-        d_indices = np.argmin(np.max(H, axis=1, keepdims=True), axis=2).flatten()
-        u = [u_c[i] for i in u_indices]
-        d = [d_c[i] for i in d_indices]
-
-        # for i in range(dataset.numpoints):
-        #     d_index = torch.argmax(H[i, :, :], dim=1)[1]
-        #     u_index = torch.argmin(H[i, :, d_index])
-        #     u[i] = u_c[u_index]
-        #     d[i] = d_c[d_index]
-
-        u = torch.as_tensor(u).to(device)
-        d = torch.as_tensor(d).to(device)
-        lam_v = torch.as_tensor(lam_v).to(device)
-        lam_d = torch.as_tensor(lam_d).to(device)
-        del_v = torch.as_tensor(del_v).to(device)
-
-        # ham = lam_da * v1 + lam_va * u + lam_dd * v2 + lam_dv * d
         ham = lam_d * del_v + lam_v * (u - d)
 
         if torch.all(dirichlet_mask):
             diff_constraint_hom = torch.Tensor([0])
         else:
             # hji equation -dv/dt because the time is backward during training
-            # diff_constraint_hom = -dvdt + ham
-            # diff_constraint_hom = torch.min(-dvdt + ham, d2vdp)
             diff_constraint_hom = -dvdt + ham
+
+
 
         # boundary condition check
         dirichlet = y[dirichlet_mask] - source_boundary_values[dirichlet_mask]
+        weight = 1
+
+        weight_ratio = torch.abs(diff_constraint_hom).sum() * weight / torch.abs(dirichlet).sum()
+        weight_ratio = weight_ratio.detach()
+        if weight_ratio == 0:
+            hjpde_weight = 1
+        else:
+            hjpde_weight = weight_ratio
+
 
         # A factor of (2e5, 100) to make loss roughly equal
-        return {'dirichlet': torch.abs(dirichlet).sum() / 6,  # 1e4
-                'diff_constraint_hom': torch.abs(diff_constraint_hom).sum()}
+        return {'dirichlet': torch.abs(dirichlet).sum() / weight,
+                # torch.abs(dirichlet).sum(), torch.norm(torch.abs(dirichlet))
+                'diff_constraint_hom': torch.abs(diff_constraint_hom).sum() / hjpde_weight}
+        # return {'dirichlet': torch.abs(dirichlet).sum() * beta,  # 1e4
+        #         'diff_constraint_hom': torch.abs(diff_constraint_hom).sum()}
 
     return soccer_incomplete
 
