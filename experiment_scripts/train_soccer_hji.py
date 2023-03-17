@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import dataio, utils, training, loss_functions, modules_picnn, modules
+import dataio, utils, training, loss_functions, modules_picnn_new as modules_picnn, modules, modules_ficnn, icnn_pytorch
 
 from torch.utils.data import DataLoader
 import configargparse
@@ -18,15 +18,15 @@ p = configargparse.ArgumentParser()
 p.add('-c', '--config_filepath', required=False, is_config_file=True, help='Path to config file.')
 
 p.add_argument('--logging_root', type=str, default='./logs', help='root for logging')
-p.add_argument('--experiment_name', type=str, default='test_for_iros_fast', required=False,
+p.add_argument('--experiment_name', type=str, default='test_fix_mod_negative_2', required=False,
                help='Name of subdirectory in logging_root where summaries and checkpoints will be saved.')
 
 # General training options
 p.add_argument('--batch_size', type=int, default=32)
-p.add_argument('--lr', type=float, default=2e-5, help='learning rate. default=2e-5') # 1 for lbfgs
+p.add_argument('--lr', type=float, default=5e-5, help='learning rate. default=2e-5') # 1 for lbfgs
 
 # 200000 for hybrid, 100000 for supervised, 160000 for self-supervised
-p.add_argument('--num_epochs', type=int, default=40000,
+p.add_argument('--num_epochs', type=int, default=20000,
                help='Number of epochs to train for.')
 
 p.add_argument('--epochs_til_ckpt', type=int, default=1000,
@@ -41,10 +41,10 @@ p.add_argument('--tMin', type=float, default=0.0, required=False, help='Start ti
 p.add_argument('--tMax', type=float, default=1.0, required=False, help='End time of the simulation')
 p.add_argument('--num_hl', type=int, default=3, required=False, help='The number of hidden layers')
 p.add_argument('--num_nl', type=int, default=32, required=False, help='Number of neurons per hidden layer.')
-p.add_argument('--pretrain_iters', type=int, default=10000, required=False, help='Number of pretrain iterations')
+p.add_argument('--pretrain_iters', type=int, default=10000, required=False, help='Number of pretrain iterations (for each dt)')
 p.add_argument('--counter_start', type=int, default=-1, required=False, help='Defines the initial time for the curriculul training')
-p.add_argument('--counter_end', type=int, default=30000, required=False, help='Defines the linear step for curriculum training starting from the initial time')
-p.add_argument('--num_src_samples', type=int, default=10000, required=False, help='Number of source samples at each time step')
+p.add_argument('--counter_end', type=int, default=20000, required=False, help='Defines the linear step for curriculum training starting from the initial time')
+p.add_argument('--num_src_samples', type=int, default=100, required=False, help='Number of source samples at each time step')
 
 p.add_argument('--collisionR', type=float, default=0.25, required=False, help='Collision radius between vehicles')
 p.add_argument('--minWith', type=str, default='target', required=False, choices=['none', 'zero', 'target'], help='BRS vs BRT computation')
@@ -62,7 +62,7 @@ opt = p.parse_args()
 
 # Set the source coordinates for the target set and the obstacle sets
 
-print(opt.p)
+# print(opt.p)
 
 source_coords = [0., 0., 0., 0.]
 if opt.counter_start == -1:
@@ -72,15 +72,22 @@ if opt.counter_end == -1:
   opt.counter_end = opt.num_epochs
 
 
-dataset = dataio.SoccerIncomplete(numpoints=30000, velocity=0, u_max=1, d_max=0.8, tMin=opt.tMin,
+dataset = dataio.SoccerIncomplete(numpoints=2000, velocity=0, u_max=1, d_max=0.8, tMin=opt.tMin,
                            tMax=opt.tMax, counter_start=opt.counter_start, counter_end=opt.counter_end,
                            pretrain=opt.pretrain, pretrain_iters=opt.pretrain_iters,
                            num_src_samples=opt.num_src_samples, seed=0)
 
 dataloader = DataLoader(dataset, shuffle=True, batch_size=opt.batch_size, pin_memory=True, num_workers=0)
+#
+# model = modules_picnn.SingleBVPNet(in_features=4, out_features=1, type=opt.model, mode=opt.mode,
+#                              final_layer_factor=1., hidden_features=opt.num_nl, num_hidden_layers=opt.num_hl)
 
-model = modules_picnn.SingleBVPNet(in_features=4, out_features=1, type=opt.model, mode=opt.mode,
-                             final_layer_factor=1., hidden_features=opt.num_nl, num_hidden_layers=opt.num_hl)
+
+model = icnn_pytorch.SingleBVPNet(in_features=4, out_features=1, type=opt.model, mode=opt.mode,
+                             final_layer_factor=1., hidden_features=opt.num_nl, num_hidden_layers=opt.num_hl, dropout=0)
+#
+# model = modules_ficnn.SingleBVPNet(in_features=4, out_features=1, type=opt.model, mode=opt.mode,
+#                              final_layer_factor=1., hidden_features=opt.num_nl, num_hidden_layers=opt.num_hl)
 
 # model = modules.SingleBVPNet(in_features=4, out_features=1, type=opt.model, mode=opt.mode,
 #                              final_layer_factor=1., hidden_features=opt.num_nl, num_hidden_layers=opt.num_hl)
