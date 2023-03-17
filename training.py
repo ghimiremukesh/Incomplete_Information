@@ -18,14 +18,13 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
           validation_fn=None, start_epoch=0):
 
     optim = torch.optim.Adam(lr=lr, params=model.parameters())
-    # optim = torch.optim.LBFGS(lr=lr, params=model.parameters())
+    # optim = torch.optim.LBFGS(lr=1, params=model.parameters())
 
 
     # copy settings from Raissi et al. (2019) and here
     # https://github.com/maziarraissi/PINNs
     if use_lbfgs:
-        optim = torch.optim.LBFGS(lr=lr, params=model.parameters(), max_iter=500, max_eval=500,
-                                  history_size=50, line_search_fn='strong_wolfe')
+        optim = torch.optim.LBFGS(lr=lr, params=model.parameters())
 
     # Load the checkpoint if required
     if start_epoch > 0:
@@ -53,10 +52,16 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
 
     writer = SummaryWriter(summaries_dir)
 
+
     total_steps = 0
     with tqdm(total=len(train_dataloader) * epochs) as pbar:
         train_losses = []
         for epoch in range(start_epoch, epochs):
+            # check changing optimizer
+            if epoch == 5000:
+                optim = torch.optim.LBFGS(lr=1, params=model.parameters(), line_search_fn='strong_wolfe')
+                use_lbfgs = True
+
             if not epoch % epochs_til_checkpoint and epoch:
                 # Saving the optimizer state is important to produce consistent results
                 checkpoint = {
@@ -77,6 +82,9 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
 
                 model_input = {key: value.to(device) for key, value in model_input.items()}
                 gt = {key: value.to(device) for key, value in gt.items()}
+
+                if epoch == 0:
+                    writer.add_graph(model, model_input, use_strict_trace=False)
 
                 if double_precision:
                     model_input = {key: value.double() for key, value in model_input.items()}
@@ -135,17 +143,18 @@ def train(model, train_dataloader, epochs, lr, steps_til_summary, epochs_til_che
                     # uncomment if using convex nn
                     model.convexify()
 
-                    parm = {}
-
-                    for name, parameters in model.net.net_z_z.named_parameters():
-                        parm[name] = parameters.detach().cpu().numpy()
+                    # parm = {}
+                    #
+                    # for name, parameters in model.net.net_z_z.named_parameters():
+                    #     parm[name] = parameters.detach().cpu().numpy()
 
                     # print()
 
                 pbar.update(1)
 
                 if not total_steps % steps_til_summary:
-                    tqdm.write("Epoch %d, Total loss %0.6f, iteration time %0.6f" % (epoch, train_loss, time.time() - start_time))
+                    tqdm.write("Epoch %d, Total loss %0.6f iteration time %0.6f" %
+                               (epoch, train_loss, time.time() - start_time))
 
                     if val_dataloader is not None:
                         print("Running validation set...")
