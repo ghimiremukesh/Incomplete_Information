@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import copy
 import random
 from itertools import product
+import multiprocess as mp
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -51,7 +52,8 @@ def value_action(X_nn, t_nn, model):
             next_in = {'coords': x_next}
             V_next[i, j] = model(next_in)['model_out'].squeeze()
 
-    d_index = np.unravel_index(torch.argmax(torch.amin(V_next, dim=1)), V_next.shape)[1]
+    # d_index = np.unravel_index(torch.argmax(torch.amin(V_next, dim=1)), V_next.shape)[1]
+    d_index = torch.argmin(torch.amax(V_next, dim=0))
     u_index = torch.argmax(torch.amin(V_next, dim=1))
     u = u_c[u_index]
     d = d_c[d_index]
@@ -67,17 +69,21 @@ def dynamic(X_nn, dt, action):
     return d, v
 
 
-def optimization(X_nn, t_nn, dt, model, type):
+def optimization(X_nn, t_nn, dt, model, type, p):
     # \sum lambda_j * p_j = p
     def constraint(var):
-        constrain = var[0] * var[1] + (1 - var[0]) * var[2] - X_nn[-1]
-        return abs(constrain) <= 5e-3
+        lam_1 = var[0]
+        lam_2 = 1 - lam_1
+        p_1 = var[1]
+        p_2 = (p - lam_1 * p_1) / lam_2
+
+        return 0 <= p_2 <= 1
 
     def objective_v(var):
         lam_1 = var[0]
         lam_2 = 1 - var[0]
         p1 = var[1]
-        p2 = var[2]
+        p2 = (p - lam_1 * p_1) / lam_2
 
         X_n = torch.cat((torch.tensor(t_nn, dtype=torch.float32, requires_grad=True), torch.tensor(X_nn,dtype=torch.float32, requires_grad=True).T), dim=1)
 
@@ -106,7 +112,7 @@ def optimization(X_nn, t_nn, dt, model, type):
                 V_next[i, j] = model(next_in)['model_out'].squeeze()
                 count += 1
 
-        d_index = np.unravel_index(torch.argmax(torch.amin(V_next, dim=1)), V_next.shape)[1]
+        d_index = torch.argmin(torch.amax(V_next, dim=0))
         u_index = torch.argmax(torch.amin(V_next, dim=1))
         u = u_c[u_index]
         d = d_c[d_index]
@@ -131,8 +137,7 @@ def optimization(X_nn, t_nn, dt, model, type):
                 V_next_2[i, j] = model(next_in)['model_out'].squeeze()
                 count += 1
 
-        d_index = np.unravel_index(torch.argmax(torch.amin(V_next, dim=1)), V_next.shape)[1]
-        u_index = torch.argmax(torch.amin(V_next, dim=1))
+
         u = u_c[u_index]
         d = d_c[d_index]
         v_next_2 = V_next_2[u_index, d_index]
@@ -140,13 +145,25 @@ def optimization(X_nn, t_nn, dt, model, type):
         # loss = V(t_k) - \sum lambda_i * V(t_k+1, p_i)
         loss = V - (lam_1 * v_next_1 + lam_2 * v_next_2)
 
-        return loss
+        return lam_1, p1, abs(loss)
 
-    search_space = np.linspace(0, 1, num=11)
+    search_space = np.linspace(1e-6, 0.9999999999, num=50)
     # 1-D grid search for lambda, p1, p2
-    grid = product(search_space, repeat=3)  # make a grid
+    grid = product(search_space, repeat=2)  # make a grid
     reduced = filter(constraint, grid)  # apply filter to reduce the space
-    opt_x = min(reduced, key=objective_v)  # find 3-uple corresponding to min objective func.
+    l_1 = float('inf')
+    p_1 = float('inf')
+    curr_min = float('inf')
+    with mp.Pool(mp.cpu_count()) as pool:
+        res = pool.imap_unordered(objective_v, reduced)
+
+        for lam1, P_1, val in res:
+            if val < curr_min:
+                curr_min = val
+                l_1 = lam1
+                p_1 = P_1
+
+    # opt_x = min(reduced, key=objective_v)  # find 3-uple corresponding to min objective func.
 
     p = X_nn[-1, :]
 
@@ -156,11 +173,11 @@ def optimization(X_nn, t_nn, dt, model, type):
         p_i = p
 
     if p == 0:
-        p = p + 1e-2
+        p = p + 1e-6
 
-    lamb = opt_x[0]
-    p1 = opt_x[1]
-    p2 = opt_x[2]
+    lamb = l_1
+    p1 = p_1
+    p2 = (p - lamb * p_1) / (1-lamb)
     u_prob = np.array([lamb * p1 / p_i, (1 - lamb) * p2 / p_i])
 
     X_u1 = copy.deepcopy(X_nn)
@@ -191,7 +208,7 @@ if __name__ == '__main__':
     logging_root = './logs'
 
     # Setting to plot
-    ckpt_path = '../logs/discrete_30k_50/checkpoints/model_epoch_21000.pth'
+    ckpt_path = '../logs/fix_bugs/checkpoints/model_epoch_13000.pth'
     # ckpt_path = '../experiment_scripts/logs/4d_picnn_min_hji/checkpoints/model_final.pth'
     activation = 'tanh'
 
@@ -224,7 +241,7 @@ if __name__ == '__main__':
 
         # probability selections and calculations
         p_dist = np.random.rand()
-        p_dist = 0.8 # for debugging
+        p_dist = 0.5 # for debugging
         p_dist = [p_dist, 1 - p_dist]
         types = [0, 1]
         type_i = np.random.choice(types, p=p_dist)  # nature selection from dist
@@ -257,7 +274,7 @@ if __name__ == '__main__':
             t_nn = np.array([[Time[j - 1]]])
             _, _, V[j - 1] = value_action(X_nn, t_nn, model)
 
-            u1[j - 1], u2[j - 1], p_t, sp = optimization(X_nn, t_nn, dt, model, type_i)
+            u1[j - 1], u2[j - 1], p_t, sp = optimization(X_nn, t_nn, dt, model, type_i, p[j-1])
             if j == Time.shape[0]:
                 break
             else:
