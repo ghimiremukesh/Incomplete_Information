@@ -4,7 +4,7 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import dataio, icnn_pytorch_adaptive as icnn_pytorch, loss_functions, training_backup as training, training_og as trainingInter
+import dataio, icnn_pytorch_adaptive as icnn_pytorch, loss_functions, training_backup as training, training_og as trainingInter, modules
 from torch.utils.data import DataLoader
 import numpy as np
 import torch
