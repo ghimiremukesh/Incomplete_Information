@@ -3,245 +3,161 @@ import copy
 import torch
 import diff_operators
 import numpy as np
+from itertools import product
+from scipy.spatial import ConvexHull
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 
-def initialize_soccer_incomplete(dataset):
-    def soccer_incomplete(model_output, gt):
+def initialize_one_sided_game(dataset):
+    def convex_hull(points, vex=True):
+        """Computes the convex hull of a set of 2D points.
 
+        Input: an iterable sequence of (x, y) pairs representing the points.
+        Output: a list of vertices of the convex hull in counter-clockwise order,
+          starting from the vertex with the lexicographically smallest coordinates.
+        Implements Andrew's monotone chain algorithm. O(n log n) complexity.
+        """
+        # Sort the points lexicographically (tuples are compared lexicographically).
+        # Remove duplicates to detect the case we have just one unique point.
+        points = sorted(set(points))
+
+        # Boring case: no points or a single point, possibly repeated multiple times.
+        if len(points) <= 1:
+            return points
+
+        # 2D cross product of OA and OB vectors, i.e. z-component of their 3D cross product.
+        # Returns a positive value, if OAB makes a counter-clockwise turn,
+        # negative for clockwise turn, and zero if the points are collinear.
+        def cross(o, a, b):
+            return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+        if vex:
+            # Build lower hull
+            lower = []
+            for p in points:
+                while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+                    lower.pop()
+                lower.append(p)
+        else:
+            # Build upper hull
+            upper = []
+            for p in reversed(points):
+                while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+                    upper.pop()
+                upper.append(p)
+
+        # Concatenation of the lower and upper hulls gives the convex hull.
+        # Last point of each list is omitted because it is repeated at the beginning of the other list.
+        return lower[:] if vex else upper[:]
+
+    def cav_vex(values, p, type='vex'):
+        lower = True if type == 'vex' else False
+        ps = np.linspace(0, 1, 11)
+        values = np.vstack(values).T
+        cvx_vals = np.zeros((values.shape[0], 1))
+        for i in range(values.shape[0]):
+            value = values[i]
+            points = zip(ps, value)
+            hull_points = convex_hull(points, vex=lower)
+            hull_points = sorted(hull_points)
+            x, y = zip(*hull_points)
+            num_facets = len(hull_points) - 1
+            if p[i] != 1:
+                s_idx = [True if x[j] <= p[i] < x[j + 1] else False for j in range(num_facets)]
+            else:
+                s_idx = [True if x[j] < p[i] <= x[j + 1] else False for j in range(num_facets)]
+            facets = np.array(list(zip(x, x[1:])))
+            val_zips = np.array(list(zip(y, y[1:])))
+            P = facets[s_idx].flatten()
+            vals = val_zips[s_idx].flatten()
+            x1, x2 = P
+            y1, y2 = vals
+            # calculate the value from the equation:
+            slope = (y2 - y1) / (x2 - x1)
+            intercept = y1 - slope * x1
+            cvx_vals[i] = slope * p[i] + intercept
+        # p_idx = [list(ps).index(each) for each in p]
+
+        return cvx_vals
+
+
+    def dynamics(x, u, d):
+        u = [-u, u]
+        d = [-d, d]
+        dt = dataset.dt
+        da = np.array([a - b for a, b in product(u, d)])
+        da_v = da * dt
+        da_x = da * 0.5 * dt ** 2
+        x_new = np.array([x[..., 1] + dt * x[..., 2] + a for a in da_x]).T.reshape(-1, 1)
+        v_new = np.array([x[..., 2] + a for a in da_v]).T.reshape(-1, 1)
+        # p_new = np.multiply(x[:, 3].reshape(-1, 1),
+        #                     np.ones((x.shape[0], 4))).reshape(-1, 1)
+        X_new = np.hstack((x_new, v_new))
+
+        return X_new
+
+    def one_sided(model_output, gt,
+                  model_input=None):  # model input is the function that computes Value at next timestep
         source_boundary_values = gt['source_boundary_values']
         x = model_output['model_in']
-        # output of the value network V(t, x, p)
         y = model_output['model_out']  # (meta_batch_size, num_points, 1)
         dirichlet_mask = gt['dirichlet_mask']
+        time = dataset.time
 
-        # calculate the partial gradient w.r.t. state (not p)
-        jac, _ = diff_operators.jacobian(y, x)
-        dvdx = jac[..., 0, 1:-1].squeeze()  # exclude the last one
-        dvdt = jac[..., 0, 0].squeeze()
+        if time != 0.0:
+            assert model_input is not None, "Need a value function for the next time-step!"
+            model = model_input
+            x_prev = torch.clone(x).detach().cpu().numpy()
+            t_next = time - dataset.dt
+            x_next = torch.from_numpy(dynamics(x_prev, dataset.umax, dataset.dmax))
+            x_next = torch.cat((t_next * torch.ones((x_next.shape[0], 1)), x_next), dim=1)
+            # coords_in = {'coords_in': torch.tensor(x_next).to(device)}
+            vs = []
+            ps = np.linspace(0, 1, dataset.num_ps)
+            p = x_prev[..., -1]
+            for p_each in ps:
+                p_next = p_each * torch.ones_like(x_next[:, 1]).reshape(-1, 1)
+                x_next_p = torch.cat((x_next, p_next), dim=1)
+                coords_in = {'coords': x_next_p.to(device)}
+                v_next = model(coords_in)['model_out'].detach().cpu().numpy()
+                v_next = v_next.reshape(-1, 2, 2)
+                v_next = np.min(np.max(v_next, 2), 1)
+                vs.append(v_next)
 
-        lam_d = dvdx[:, :1].detach().cpu().numpy()
-        lam_v = dvdx[:, -1:].detach().cpu().numpy()
+            true_v = torch.tensor(cav_vex(vs, p.flatten(), type='vex')).reshape(1, -1, 1).to(device)  # vex for convexification
+            td_error = y[~dirichlet_mask] - true_v[~dirichlet_mask]
 
-        del_v = x[:, :, 2].squeeze()
-
-
-        u = np.sign(lam_v) * dataset.uMax  # bang bang control
-        d = np.sign(lam_d) * dataset.dMax  # bang bang control (min H * -1)
-
-        u = torch.as_tensor(u).squeeze().to(device)
-        d = torch.as_tensor(d).squeeze().to(device)
-        lam_d = torch.as_tensor(lam_d).squeeze().to(device)
-        lam_v = torch.as_tensor(lam_v).squeeze().to(device)
-
-        ham = lam_d * del_v + lam_v * (u - d)
-
-        if torch.all(dirichlet_mask):
-            diff_constraint_hom = torch.Tensor([0])
         else:
-            # hji equation -dv/dt because the time is backward during training
-            diff_constraint_hom = -dvdt + ham
+            td_error = torch.tensor([0.])
 
-
-
-        # boundary condition check
         dirichlet = y[dirichlet_mask] - source_boundary_values[dirichlet_mask]
-        weight = 1
 
-        weight_ratio = torch.abs(diff_constraint_hom).sum() * weight / torch.abs(dirichlet).sum()
-        weight_ratio = weight_ratio.detach()
-        if weight_ratio == 0:
-            hjpde_weight = 1
-        else:
-            hjpde_weight = weight_ratio
+        return {'dirichlet': torch.abs(dirichlet).sum(),
+                'td_error': torch.abs(td_error).sum()}
+
+    return one_sided
 
 
-        # A factor of (2e5, 100) to make loss roughly equal
-        return {'dirichlet': torch.abs(dirichlet).sum() / weight,
-                # torch.abs(dirichlet).sum(), torch.norm(torch.abs(dirichlet))
-                'diff_constraint_hom': torch.abs(diff_constraint_hom).sum() / hjpde_weight}
-        # return {'dirichlet': torch.abs(dirichlet).sum() * beta,  # 1e4
-        #         'diff_constraint_hom': torch.abs(diff_constraint_hom).sum()}
+def initialize_val_grad_loss(dataset):
+    def loss(model_output, gt):
+        gt_values = gt['values']
+        grad = gt['gradient']
 
-    return soccer_incomplete
-
-
-def initialize_soccer_discrete(dataset):
-    def soccer_discrete(model, model_output, gt):
-
-        source_boundary_values = gt['source_boundary_values']
+        value = model_output['model_out']
         x = model_output['model_in']
-        # output of the value network V(t, x, p)
-        y = model_output['model_out']  # (meta_batch_size, num_points, 1)
-        dirichlet_mask = gt['dirichlet_mask']
+        # jac, _ = diff_operators.jacobian(value, x)
+        y_flat = value.view(-1, 1)
+        jac = torch.autograd.grad(y_flat, x, torch.ones_like(y_flat), create_graph=True)[0]
+        dvdp = jac[..., -1].reshape(-1, 1)
 
-        # action candidates
-        u_c = torch.tensor([-dataset.uMax, dataset.uMax])
-        d_c = torch.tensor([-dataset.dMax, dataset.dMax])
-        # V_next = torch.zeros(dataset.numpoints, 2, 2)
-        V_next = np.zeros((dataset.numpoints, 2, 2))
-        tau = gt['tau']  # time step
+        value_diff = value - gt_values
+        grad_diff = grad - dvdp
 
-        x_next = [copy.deepcopy(x) for _ in range(len(u_c)) for _ in range(len(d_c))]
-        # x_next = [torch.clone(x) for _ in range(len(u_c)) for j in range(len(d_c))]
-        # v = [x_next[i][..., 2] + u_c[i]]
+        factor = (torch.abs(value_diff).sum()/torch.abs(grad_diff).sum()).detach()
 
-        count = 0  # brute force, try something later
-        for i in range(len(u_c)):
-            for j in range(len(d_c)):
-                # get the next state
-                v = x_next[count][..., 2] + (u_c[i] - d_c[j]) * tau
-                d = x_next[count][..., 1] + v * tau
-                with torch.no_grad():
-                    x_next[count][..., 1] = d
-                    x_next[count][..., 2] = v
-                    x_next[count][..., 0] = x_next[count][..., 0] - tau
-                next_in = {'coords': x_next[count]}
-                V_next[:, i, j] = model(next_in)['model_out'].cpu().detach().numpy().squeeze()
-                count += 1
+        return {'value error': torch.abs(value_diff).sum(),
+                'gradient error': factor * torch.abs(grad_diff).sum()}
 
-        # array to store actual next value
-        # pick action based on max_u min_d V
-        # this is only for player 1 at the moment
-        # u_indices = torch.argmax(torch.amin(V_next, dim=2, keepdim=True), dim=1)
-        # d_indices = np.unravel_index(torch.argmin(torch.amax(V_next, dim=2, keepdim=True), dim=2), V_next.shape[0])[0][:, 0]
-        u_indices = np.argmax(np.min(V_next, axis=2, keepdims=True), axis=1).flatten()
-        d_indices = np.argmin(np.max(V_next, axis=1, keepdims=True), axis=2).flatten()
-        # d_indices = np.unravel_index(torch.argmax(torch.amin(V_next, dim=2, keepdim=True)))
-        # d_indices = torch.argmax(torch.amin(V_next, dim=2, keepdim=True), dim=2)[1]
-        # d_indices = torch.argmax(V_next, dim=2)[:, 1]
-        # u_indices = torch.argmin(V_next, dim=1)[:, 1]
+    return loss
 
-        v_next_true = [V_next[i, u_indices[i], d_indices[i]] for i in range(len(V_next))]
-        v_next_true = torch.as_tensor(v_next_true).flatten().to(device)
-        # v_next_true = torch.as_tensor(np.diag(V_next[:, u_indices.flatten(),
-        #                                       d_indices.flatten()].reshape(-1, 1))).to(device)
-        # v_next_true = torch.diag(V_next[:, u_indices.flatten(), d_indices.flatten()]).to(device)
-
-        # u = torch.zeros(dataset.numpoints)
-        # d = torch.zeros(dataset.numpoints)
-        # V_next_true = torch.zeros(dataset.numpoints)
-
-        # remove for-loop replaced by above : keep for future debugging
-        # for i in range(dataset.numpoints):
-        #     d_index = torch.argmax(V_next[i, :, :], dim=1)[1]
-        #     u_index = torch.argmin(V_next[i, :, d_index])
-        #     u[i] = u_c[u_index]
-        #     d[i] = d_c[d_index]
-        #     V_next_true[i] = V_next[i, u_index, d_index]   # this is the true value of the next state from minmax
-
-        if torch.all(dirichlet_mask):
-            diff_constraint_hom = torch.Tensor([0])
-        else:
-            # check the value difference # for times other than terminal time
-            diff_constraint_hom = y[~dirichlet_mask] - v_next_true.reshape(1, -1, 1)[~dirichlet_mask]
-
-        # boundary condition check
-        dirichlet = y[dirichlet_mask] - source_boundary_values[dirichlet_mask]
-
-        # A factor of (2e5, 100) to make loss roughly equal
-        return {'dirichlet': torch.abs(dirichlet).sum() / 150,  # 1e4
-                'diff_constraint_hom': torch.abs(diff_constraint_hom).sum()}
-
-    return soccer_discrete
-
-
-def initialize_soccer_hji(dataset):
-    def soccer_hji(model_output, gt):
-
-        source_boundary_values = gt['source_boundary_values']
-        x = model_output['model_in']
-
-        # the network output should be V1 and V2
-        y = model_output['model_out']  # (meta_batch_size, num_points, 1); value
-        dirichlet_mask = gt['dirichlet_mask']
-        batch_size = x.shape[1]
-
-        # calculate the partial gradient of V w.r.t. time and state
-        jac, _ = diff_operators.jacobian(y, x)
-        theta = x[:, :, -1]
-
-        # partial gradient of V w.r.t. time and state
-        dvdt = jac[..., 0, 0].squeeze()
-        dvdx = jac[..., 0, 1:].squeeze()
-
-        # co-states
-        lam_1 = dvdx[:, :1]
-        lam_2 = dvdx[:, 1:2]
-        lam_4 = dvdx[:, 2:3]
-        lam_5 = dvdx[:, 3:4]
-        lam_6 = dvdx[:, 4:5]
-
-        v1 = x[:, :, 2]
-        v2 = x[:, :, 4]
-
-        # action candidates
-        u_c = torch.tensor([-dataset.uMax, dataset.uMax])
-        d_c = torch.tensor([-dataset.dMax, dataset.dMax])
-        H1 = torch.zeros(dataset.numpoints, 2, 1)
-        H2 = torch.zeros(dataset.numpoints, 2, 1)
-
-        # for i in range(len(u_c)):
-        #     for j in range(len(d_c)):
-        #         H[:, i, j] = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u_c[i].squeeze() + \
-        #                      lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d_c[j].squeeze() + \
-        #                      lam_6.squeeze() * torch.sign(u_c[i].squeeze()) - theta * u_c[i]
-
-        # General-Sum
-        for i in range(len(u_c)):
-            H1[:, i] = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u_c[i].squeeze() + \
-                       lam_6.squeeze() * u_c[i]
-
-        for i in range(len(d_c)):
-            H2[:, i] = lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d_c[i].squeeze()
-
-        u = torch.zeros(dataset.numpoints)
-        d = torch.zeros(dataset.numpoints)
-        # pick action based on max_d min_u H
-        for i in range(dataset.numpoints):
-            # d_index = torch.argmax(H[i, :, :], dim=1)[1] # minimax
-            # u_index = torch.argmin(H[i, :, d_index])
-            # u[i] = u_c[u_index]
-            # d[i] = d_c[d_index]
-            u_index = torch.argmax(H1[i, :, :], dim=1)  # maximin
-            d_index = torch.argmin(H2[i, :, :], dim=1)
-            u[i] = u_c[u_index]
-            d[i] = d_c[d_index]
-
-        u = u.to(device)
-        d = d.to(device)
-
-        # calculate hamiltonian
-        # ham = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u.squeeze() + \
-        #       lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d.squeeze() + \
-        #       lam_6.squeeze() * torch.sign(u.squeeze()) - theta * u.squeeze()
-
-        # general-sum
-        ham_1 = lam_1.squeeze() * v1.squeeze() + lam_2.squeeze() * u.squeeze() + lam_6.squeeze() * u
-
-        ham_2 = lam_4.squeeze() * v2.squeeze() + lam_5.squeeze() * d.squeeze()
-
-        ham = ham_1 + ham_2
-        # complete information
-        # ham = -lam_1.squeeze() * v1.squeeze() - lam_2.squeeze() * u.squeeze() - \
-        #       lam_4.squeeze() * v2.squeeze() - lam_5.squeeze() * d.squeeze()
-        # dirichlet_mask is the bool array. It evaluates whether y[dirichlet_mask] is boundary condition or not
-        # HJI check
-        if torch.all(dirichlet_mask):
-            diff_constraint_hom = torch.Tensor([0])
-        else:
-            # hji equation -dv/dt because the time is backward during training
-            diff_constraint_hom = -dvdt + ham
-            # diff_constraint_hom = torch.max(diff_constraint_hom, (y-source_boundary_values).squeeze())
-            # diff_constraint_hom = dvdt + torch.minimum(torch.tensor([[0]]), ham)
-            # diff_constraint_hom = dvdt + torch.clamp(ham, max=0.0)
-
-        # boundary condition check
-        dirichlet = y[dirichlet_mask] - source_boundary_values[dirichlet_mask]
-
-        # A factor of (2e5, 100) to make loss roughly equal
-        return {'dirichlet': torch.abs(dirichlet).sum(),  # 1e4
-                'diff_constraint_hom': torch.abs(diff_constraint_hom).sum() / 40}
-
-    return soccer_hji
