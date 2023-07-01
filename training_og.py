@@ -6,7 +6,7 @@ from tqdm.autonotebook import tqdm
 import time
 import numpy as np
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from lbfgsnew import LBFGSNew
+import lbfgsnew
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -14,12 +14,12 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 def train(model, train_dataloader, val_dataloader, epochs, lr, steps_til_summary, epochs_til_checkpoint, model_dir,
           loss_fn,
           clip_grad=False, use_lbfgs=False):
-    # optim = Adam(lr=lr, params=model.parameters())
-    optim = torch.optim.SGD(lr=lr, params=model.parameters())
+    optim = Adam(lr=lr, params=model.parameters())
+    # optim = torch.optim.SGD(lr=lr, params=model.parameters())
     scheduler = ReduceLROnPlateau(optim, mode='min', patience=2, verbose=True)
 
     if use_lbfgs:
-        optim = LBFGSNew(model.parameters(), history_size=7, max_iter=2, line_search_fn=True, batch_mode=False)
+        optim = lbfgsnew.LBFGSNew(model.parameters(), history_size=7, max_iter=4, line_search_fn=True,batch_mode=True)
 
     summaries_dir = os.path.join(model_dir, 'summaries')
     checkpoints_dir = os.path.join(model_dir, 'checkpoints_dir')
